@@ -158,7 +158,7 @@ class UTF8Encoding {
 		return [UInt8](str.utf8)
 	}
 }
-
+/// enum for mysql options
 public enum MySQLOpt {
 	case MYSQL_OPT_CONNECT_TIMEOUT, MYSQL_OPT_COMPRESS, MYSQL_OPT_NAMED_PIPE,
 		MYSQL_INIT_COMMAND, MYSQL_READ_DEFAULT_FILE, MYSQL_READ_DEFAULT_GROUP,
@@ -180,16 +180,19 @@ public enum MySQLOpt {
 		MYSQL_OPT_CAN_HANDLE_EXPIRED_PASSWORDS
 }
 
+/// Provide access to MySQL connector functions
 public final class MySQL {
 	
 	static private var dispatchOnce = pthread_once_t()
 	
 	private var ptr: UnsafeMutablePointer<MYSQL>
 	
+    /// Returns client info from mysql_get_client_info
 	public static func clientInfo() -> String {
 		return String(validatingUTF8: mysql_get_client_info()) ?? ""
 	}
 	
+    /// Create mysql server connection and set ptr
 	public init() {
 		
 		pthread_once(&MySQL.dispatchOnce) {
@@ -203,27 +206,29 @@ public final class MySQL {
 		self.close()
 	}
 	
+    /// Close connection and set ptr to nil
 	public func close() {
 		if self.ptr != nil {
 			mysql_close(self.ptr)
 			self.ptr = nil
 		}
 	}
-	
+	/// Return mysql error number
 	public func errorCode() -> UInt32 {
 		return mysql_errno(self.ptr)
 	}
-	
+	/// Return mysql error message
 	public func errorMessage() -> String {
 		return String(validatingUTF8: mysql_error(self.ptr)) ?? ""
 	}
 	
+    /// Return mysql server version
 	public func serverVersion() -> Int {
 		return Int(mysql_get_server_version(self.ptr))
 	}
 	
-	// returns an allocated buffer holding the string's contents and the full size in bytes which was allocated
-	// An empty (but not nil) string would have a count of 1
+	/// returns an allocated buffer holding the string's contents and the full size in bytes which was allocated
+	/// An empty (but not nil) string would have a count of 1
 	static func convertString(s: String?) -> (UnsafeMutablePointer<Int8>, Int) {
 		var ret: (UnsafeMutablePointer<Int8>, Int) = (UnsafeMutablePointer<Int8>(nil), 0)
 		guard let notNilString = s else {
@@ -253,6 +258,7 @@ public final class MySQL {
 		}
 	}
 	
+    /// Connects to a MySQL server
 	public func connect(host: String? = nil, user: String? = nil, password: String? = nil, db: String? = nil, port: UInt32 = 0, socket: String? = nil, flag: UInt = 0) -> Bool {
 		if self.ptr == nil {
 			self.ptr = mysql_init(nil)
@@ -276,11 +282,13 @@ public final class MySQL {
 		return check != nil && check == self.ptr
 	}
 	
+    /// Selects a database
 	public func selectDatabase(named: String) -> Bool {
 		let r = mysql_select_db(self.ptr, named)
 		return r == 0
 	}
 	
+    /// Returns table names matching an optional simple regular expression in an array of Strings
 	public func listTables(wild: String? = nil) -> [String] {
 		var result = [String]()
 		let res = (wild == nil ? mysql_list_tables(self.ptr, nil) : mysql_list_tables(self.ptr, wild!))
@@ -295,6 +303,7 @@ public final class MySQL {
 		return result
 	}
 	
+    /// Returns database names matching an optional simple regular expression in an array of Strings
 	public func listDatabases(wild: String? = nil) -> [String] {
 		var result = [String]()
 		let res = wild == nil ? mysql_list_dbs(self.ptr, nil) : mysql_list_dbs(self.ptr, wild!)
@@ -309,31 +318,37 @@ public final class MySQL {
 		return result
 	}
 	
+    /// Commits the transaction
 	public func commit() -> Bool {
 		let r = mysql_commit(self.ptr)
 		return r == 1
 	}
 	
+    /// Rolls back the transaction
 	public func rollback() -> Bool {
 		let r = mysql_rollback(self.ptr)
 		return r == 1
 	}
 	
+    /// Checks whether any more results exist
 	public func moreResults() -> Bool {
 		let r = mysql_more_results(self.ptr)
 		return r == 1
 	}
 	
+    /// Returns/initiates the next result in multiple-result executions
 	public func nextResult() -> Int {
 		let r = mysql_next_result(self.ptr)
 		return Int(r)
 	}
 	
+    /// Executes an SQL query using the specified string
 	public func query(stmt: String) -> Bool {
 		let r = mysql_real_query(self.ptr, stmt, UInt(stmt.utf8.count))
 		return r == 0
 	}
 	
+    /// Retrieves a complete result set to the client
     public func storeResults() -> MySQL.Results? {
         let ret = mysql_store_result(self.ptr)
         if ret == nil {
@@ -423,20 +438,24 @@ public final class MySQL {
 		}
 	}
 	
+    /// Sets connect options for connect()
 	public func setOption(option: MySQLOpt) -> Bool {
 		return mysql_options(self.ptr, exposedOptionToMySQLOption(option), nil) == 0
 	}
 	
+    /// Sets connect options for connect() with boolean option argument
 	public func setOption(option: MySQLOpt, _ b: Bool) -> Bool {
 		var myB = my_bool(b ? 1 : 0)
 		return mysql_options(self.ptr, exposedOptionToMySQLOption(option), &myB) == 0
 	}
 	
+    /// Sets connect options for connect() with integer option argument
 	public func setOption(option: MySQLOpt, _ i: Int) -> Bool {
 		var myI = UInt32(i)
 		return mysql_options(self.ptr, exposedOptionToMySQLOption(option), &myI) == 0
 	}
 	
+    /// Sets connect options for connect() with string option argument
 	public func setOption(option: MySQLOpt, _ s: String) -> Bool {
 		var b = false
 		s.withCString { p in
@@ -445,6 +464,7 @@ public final class MySQL {
 		return b
 	}
 	
+    /// Class used to manage and interact with result sets
 	public final class Results: IteratorProtocol {
 		var ptr: UnsafeMutablePointer<MYSQL_RES>
 		
@@ -458,6 +478,7 @@ public final class MySQL {
 			self.close()
 		}
 		
+        /// close result set by releasing the results
 		public func close() {
 			if self.ptr != nil {
 				mysql_free_result(self.ptr)
@@ -465,18 +486,25 @@ public final class MySQL {
 			}
 		}
 		
+        /// Seeks to an arbitrary row number in a query result set
 		public func dataSeek(offset: UInt) {
 			mysql_data_seek(self.ptr, my_ulonglong(offset))
 		}
 		
+        /// Returns the number of rows in a result set
 		public func numRows() -> Int {
 			return Int(mysql_num_rows(self.ptr))
 		}
 		
+        /// Returns the number of columns in a result set
+        /// Returns: Int
 		public func numFields() -> Int {
 			return Int(mysql_num_fields(self.ptr))
 		}
 		
+        /// Fetches the next row from the result set
+        ///     returning a String array of column names if row available
+        /// Returns: optional Element
 		public func next() -> Element? {
 			let row = mysql_fetch_row(self.ptr)
 			guard row != nil else {
@@ -495,6 +523,7 @@ public final class MySQL {
 			return ret
 		}
 		
+        /// passes a string array of the column names to the callback provided
 		public func forEachRow(callback: (Element) -> ()) {
 			while true {
 				let row = mysql_fetch_row(self.ptr)
