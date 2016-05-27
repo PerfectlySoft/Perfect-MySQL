@@ -498,7 +498,7 @@ public final class MySQL {
 	public final class Results: IteratorProtocol {
 		var ptr: UnsafeMutablePointer<MYSQL_RES>?
 		
-		public typealias Element = [String]
+		public typealias Element = [String?]
 		
 		init(_ ptr: UnsafeMutablePointer<MYSQL_RES>) {
 			self.ptr = ptr
@@ -548,7 +548,7 @@ public final class MySQL {
 			}
 		#endif
 			
-			var ret = [String]()
+			var ret = [String?]()
 			for fieldIdx in 0..<self.numFields() {
 				let length = lengths[fieldIdx]
 				let rowVal = row[fieldIdx]
@@ -557,13 +557,17 @@ public final class MySQL {
 				if let raw = UnsafeMutablePointer<UInt8>(rowVal) {
 					let s = UTF8Encoding.encode(generator: GenerateFromPointer(from: raw, count: len))
 					ret.append(s)
-				}
+                } else {
+                    ret.append(nil)
+                }
 			#else
 				let raw = UnsafeMutablePointer<UInt8>(rowVal)
 				if nil != raw {
 					let s = UTF8Encoding.encode(generator: GenerateFromPointer(from: raw, count: len))
 					ret.append(s)
-				}
+                } else {
+                    ret.append(nil)
+                }
 			#endif
 			}
 			return ret

@@ -186,6 +186,41 @@ class MySQLTests: XCTestCase {
 		let list2 = mysql.listTables(wildcard: "test")
 		XCTAssert(list2.count == 0)
 	}
+    
+    func testInsertNull() {
+        mysql.query(statement: "DROP TABLE IF EXISTS test")
+        
+        let qres = mysql.query(statement: "CREATE TABLE test (id INT, d DOUBLE, s VARCHAR(1024))")
+        XCTAssert(qres == true, mysql.errorMessage())
+        
+        let list = mysql.listTables(wildcard: "test")
+        XCTAssert(list.count > 0)
+        
+        let ires = mysql.query(statement: "INSERT INTO test (id,d,s) VALUES (1,NULL,\"Row 1\")")
+        XCTAssert(ires == true, mysql.errorMessage())
+        
+        let sres2 = mysql.query(statement: "SELECT id,d,s FROM test")
+        XCTAssert(sres2 == true, mysql.errorMessage())
+        
+        let results = mysql.storeResults()!
+        XCTAssert(results.numRows() == 1)
+        XCTAssert(results.numFields() == 3)
+        
+        results.forEachRow { row in
+            XCTAssert(row.count == 3)
+            XCTAssertEqual(row[0], "1")
+            XCTAssertNil(row[1])
+            XCTAssertEqual(row[2], "Row 1")
+        }
+        
+        results.close()
+        
+        let qres2 = mysql.query(statement: "DROP TABLE test")
+        XCTAssert(qres2 == true, mysql.errorMessage())
+        
+        let list2 = mysql.listTables(wildcard: "test")
+        XCTAssert(list2.count == 0)
+    }
 	
 	func testQueryStmt1() {
 		mysql.query(statement: "DROP TABLE IF EXISTS all_data_types")
