@@ -1,4 +1,0 @@
-module mysqlclient {
-    header "mysqlclient.h"
-    export *
-}

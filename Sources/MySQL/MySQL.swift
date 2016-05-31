@@ -140,14 +140,14 @@ struct Encoding {
 struct UTF8Encoding {
 	
 	/// Use a character generator to create a String.
-	static func encode<G : IteratorProtocol where G.Element == UTF8.CodeUnit>(generator generator: G) -> String {
-		return Encoding.encode(codec: UTF8(), generator: generator)
+	static func encode<G : IteratorProtocol where G.Element == UTF8.CodeUnit>(generator gen: G) -> String {
+		return Encoding.encode(codec: UTF8(), generator: gen)
 	}
 	
 	#if swift(>=3.0)
 	/// Use a character sequence to create a String.
-	static func encode<S : Sequence where S.Iterator.Element == UTF8.CodeUnit>(bytes bytes: S) -> String {
-		return encode(generator: bytes.makeIterator())
+	static func encode<S : Sequence where S.Iterator.Element == UTF8.CodeUnit>(bytes byts: S) -> String {
+		return encode(generator: byts.makeIterator())
 	}
 	#else
 	/// Use a character sequence to create a String.
@@ -234,9 +234,10 @@ public final class MySQL {
 	/// returns an allocated buffer holding the string's contents and the full size in bytes which was allocated
 	/// An empty (but not nil) string would have a count of 1
 	static func convertString(_ s: String?) -> (UnsafeMutablePointer<Int8>?, Int) {
+        // this can be cleaned up with Swift 2.2 support is no longer required
 		var ret: (UnsafeMutablePointer<Int8>?, Int) = (UnsafeMutablePointer<Int8>(nil), 0)
 		guard let notNilString = s else {
-			return ret
+			return convertString("")
 		}
 		notNilString.withCString { p in
 			var c = 0
@@ -263,12 +264,12 @@ public final class MySQL {
 	}
 	
     /// Connects to a MySQL server
-	public func connect(host host: String? = nil, user: String? = nil, password: String? = nil, db: String? = nil, port: UInt32 = 0, socket: String? = nil, flag: UInt = 0) -> Bool {
+	public func connect(host hst: String? = nil, user: String? = nil, password: String? = nil, db: String? = nil, port: UInt32 = 0, socket: String? = nil, flag: UInt = 0) -> Bool {
 		if self.ptr == nil {
 			self.ptr = mysql_init(nil)
 		}
 		
-		let hostOrBlank = MySQL.convertString(host)
+		let hostOrBlank = MySQL.convertString(hst)
 		let userOrBlank = MySQL.convertString(user)
 		let passwordOrBlank = MySQL.convertString(password)
 		let dbOrBlank = MySQL.convertString(db)
@@ -287,8 +288,8 @@ public final class MySQL {
 	}
 	
     /// Selects a database
-	public func selectDatabase(named named: String) -> Bool {
-		let r = mysql_select_db(self.ptr!, named)
+	public func selectDatabase(named namd: String) -> Bool {
+		let r = mysql_select_db(self.ptr!, namd)
 		return r == 0
 	}
 	
