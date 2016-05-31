@@ -19,6 +19,7 @@
 
 import PackageDescription
 
+#if os(OSX)
 let package = Package(
     name: "MySQL",
     targets: [],
@@ -27,5 +28,15 @@ let package = Package(
     ],
     exclude: ["Sources/mysqlclient"]
 )
+#else
+let package = Package(
+    name: "MySQL",
+    targets: [],
+    dependencies: [
+                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient-Linux.git", majorVersion: 0, minor: 2)
+    ],
+    exclude: ["Sources/mysqlclient"]
+)
+#endif
 
 products.append(Product(name: "MySQL", type: .Library(.Dynamic), modules: "MySQL"))
