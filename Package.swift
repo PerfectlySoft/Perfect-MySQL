@@ -23,7 +23,7 @@ let package = Package(
     name: "MySQL",
     targets: [],
     dependencies: [
-                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient.git", majorVersion: 0, minor: 2)
+                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient.git", majorVersion: 0, minor: 3)
     ],
     exclude: ["Sources/mysqlclient"]
 )
