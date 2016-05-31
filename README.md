@@ -1,18 +1,34 @@
 # Perfect - MySQL Connector #
 
-This repository is still in flux as we finalize support for Swift Package manager.
-**Download [release-1.0](https://github.com/PerfectlySoft/Perfect/releases/tag/v1.0.0) if you are using Xcode 7.3 with Swift 2.2.**
+This project provides a Swift wrapper around the MySQL client library, enabling access to MySQL database servers.
 
-This module now builds with Swift Package Manager.
-Ensure you have installed and activated Swift tool chain swift-DEVELOPMENT-SNAPSHOT-2016-03-24 or greater.
+This package builds with Swift Package Manager and is part of the [Perfect](https://github.com/PerfectlySoft/Perfect) project. It was written to be stand-alone and so does not require PerfectLib or any other components.
+
+Ensure you have installed and activated the latest Swift 3.0 tool chain.
 
 ## OS X Build Notes
-Ensure that you have the MySQL client installed and available through */usr/local/mysql/*.
+
+This package requires the [Home Brew](http://brew.sh) build of MySQL.
+
+To install Home Brew:
+
+```
+/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+```
+
+To install MySQL:
+
+```
+brew install mysql
+```
 
 swift build
 
 ## Linux Build Notes
 
-Ensure that you have installed *libmysqlclient-dev*.
+Ensure that you have installed mysql-client.
 
-swift build
+```
+sudo apt-get install mysql-client
+```
+
