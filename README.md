@@ -1,4 +1,6 @@
-# Perfect - MySQL Connector #
+# Perfect - MySQL Connector
+
+[![GitHub version](https://badge.fury.io/gh/PerfectlySoft%2FPerfect-MySQL.svg)](https://badge.fury.io/gh/PerfectlySoft%2FPerfect-MySQL)
 
 This project provides a Swift wrapper around the MySQL client library, enabling access to MySQL database servers.
 
@@ -22,8 +24,6 @@ To install MySQL:
 brew install mysql
 ```
 
-swift build
-
 ## Linux Build Notes
 
 Ensure that you have installed mysql-client.
@@ -32,3 +32,10 @@ Ensure that you have installed mysql-client.
 sudo apt-get install mysql-client
 ```
 
+## Building
+
+Add this project as a dependency in your Package.swift file.
+
+```
+.Package(url:"https://github.com/PerfectlySoft/Perfect-MySQL.git", majorVersion: 0, minor: 1)
+```
