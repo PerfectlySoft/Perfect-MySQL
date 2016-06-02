@@ -1,6 +1,6 @@
 //
 //  Package.swift
-//  PerfectServer
+//  Perfect-MySQL
 //
 //  Created by Kyle Jessup on 3/22/16.
 //	Copyright (C) 2016 PerfectlySoft, Inc.
@@ -24,7 +24,7 @@ let package = Package(
     name: "MySQL",
     targets: [],
     dependencies: [
-                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient.git", majorVersion: 0, minor: 3)
+                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient.git", versions: Version(0,0,0)..<Version(10,0,0))
     ],
     exclude: ["Sources/mysqlclient"]
 )
@@ -33,7 +33,7 @@ let package = Package(
     name: "MySQL",
     targets: [],
     dependencies: [
-                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient-Linux.git", majorVersion: 0, minor: 2)
+                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient-Linux.git", versions: Version(0,0,0)..<Version(10,0,0))
     ],
     exclude: ["Sources/mysqlclient"]
 )
