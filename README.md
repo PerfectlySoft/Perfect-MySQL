@@ -34,16 +34,18 @@ Remove the occurrance of "-fno-omit-frame-pointer". This file is read-only by de
 
 ## Linux Build Notes
 
-Ensure that you have installed libmysqlclient-dev.
+Ensure that you have installed libmysqlclient-dev for MySQL version *5.6 or greater*.
 
 ```
 sudo apt-get install libmysqlclient-dev
 ```
+
+Please note that Ubuntu 14 defaults to including a version of MySQL client which will not compile with this package. Install MySQL client version 5.6 or greater.
 
 ## Building
 
 Add this project as a dependency in your Package.swift file.
 
 ```
-.Package(url:"https://github.com/PerfectlySoft/Perfect-MySQL.git", majorVersion: 0, minor: 1)
+.Package(url:"https://github.com/PerfectlySoft/Perfect-MySQL.git", versions: Version(0,0,0)..<Version(10,0,0))
 ```
