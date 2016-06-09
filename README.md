@@ -34,10 +34,10 @@ Remove the occurrance of "-fno-omit-frame-pointer". This file is read-only by de
 
 ## Linux Build Notes
 
-Ensure that you have installed mysql-client.
+Ensure that you have installed libmysqlclient-dev.
 
 ```
-sudo apt-get install mysql-client
+sudo apt-get install libmysqlclient-dev
 ```
 
 ## Building
