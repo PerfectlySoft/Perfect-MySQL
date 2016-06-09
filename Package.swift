@@ -26,7 +26,7 @@ let package = Package(
     dependencies: [
                       .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient.git", versions: Version(0,0,0)..<Version(10,0,0))
     ],
-    exclude: ["Sources/mysqlclient"]
+    exclude: []
 )
 #else
 let package = Package(
@@ -35,8 +35,6 @@ let package = Package(
     dependencies: [
                       .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient-Linux.git", versions: Version(0,0,0)..<Version(10,0,0))
     ],
-    exclude: ["Sources/mysqlclient"]
+    exclude: []
 )
 #endif
-
-products.append(Product(name: "MySQL", type: .Library(.Dynamic), modules: "MySQL"))

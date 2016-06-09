@@ -24,6 +24,14 @@ To install MySQL:
 brew install mysql
 ```
 
+Unfortunately, at this point in time you will need to edit the mysqlclient.pc file located here:
+
+```
+/usr/local/lib/pkgconfig/mysqlclient.pc
+```
+
+Remove the occurrance of "-fno-omit-frame-pointer". This file is read-only by default so you will need to change that first.
+
 ## Linux Build Notes
 
 Ensure that you have installed mysql-client.
