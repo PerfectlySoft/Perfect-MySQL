@@ -586,7 +586,7 @@ public final class MySQL {
 /// handles mysql prepared statements
 public final class MySQLStmt {
 	private var ptr: UnsafeMutablePointer<MYSQL_STMT>?
-	private var paramBinds: UnsafeMutablePointer<MYSQL_BIND>? = UnsafeMutablePointer<MYSQL_BIND>(nil)
+	private var paramBinds = UnsafeMutablePointer<MYSQL_BIND>(nil)
 	private var paramBindsOffset = 0
 	
     /// Possible status for fetch results
@@ -711,8 +711,18 @@ public final class MySQLStmt {
 	
     /// Executes a prepared statement, binding parameters if needed
 	public func execute() -> Bool {
+        
+        guard let ptr = self.ptr else {
+            return false
+        }
+        
 		if self.paramBindsOffset > 0 {
-			guard 0 == mysql_stmt_bind_param(self.ptr!, self.paramBinds!) else {
+            
+            guard let paramBinds = self.paramBinds else {
+                return false
+            }
+            
+			guard 0 == mysql_stmt_bind_param(ptr, paramBinds) else {
 				return false
 			}
 		}
@@ -779,7 +789,7 @@ public final class MySQLStmt {
 		return Int(r)
 	}
 	
-	func bindParam(_ s: String, type: enum_field_types) -> Bool {
+	func bindParam(_ s: String, type: enum_field_types) {
 		let convertedTup = MySQL.convertString(s)
 		self.paramBinds?[self.paramBindsOffset].buffer_type = type
 		self.paramBinds?[self.paramBindsOffset].buffer_length = UInt(convertedTup.1-1)
@@ -788,11 +798,10 @@ public final class MySQLStmt {
 		self.paramBinds?[self.paramBindsOffset].buffer = UnsafeMutablePointer<()>(convertedTup.0!)
 		
 		self.paramBindsOffset += 1
-		return true
 	}
 	
     /// create Double parameter binding
-	public func bindParam(_ d: Double) -> Bool {
+	public func bindParam(_ d: Double) {
 		self.paramBinds?[self.paramBindsOffset].buffer_type = MYSQL_TYPE_DOUBLE
 		self.paramBinds?[self.paramBindsOffset].buffer_length = UInt(sizeof(Double))
 		let a = UnsafeMutablePointer<Double>.allocatingCapacity(1)
@@ -800,11 +809,10 @@ public final class MySQLStmt {
 		self.paramBinds?[self.paramBindsOffset].buffer = UnsafeMutablePointer<()>(a)
 		
 		self.paramBindsOffset += 1
-		return true
     }
     
     /// create Int parameter binding
-    public func bindParam(_ i: Int) -> Bool {
+    public func bindParam(_ i: Int) {
         self.paramBinds?[self.paramBindsOffset].buffer_type = MYSQL_TYPE_LONGLONG
         self.paramBinds?[self.paramBindsOffset].buffer_length = UInt(sizeof(Int64))
         let a = UnsafeMutablePointer<Int64>.allocatingCapacity(1)
@@ -812,11 +820,10 @@ public final class MySQLStmt {
         self.paramBinds?[self.paramBindsOffset].buffer = UnsafeMutablePointer<()>(a)
         
         self.paramBindsOffset += 1
-        return true
     }
     
     /// create UInt64 parameter binding
-    public func bindParam(_ i: UInt64) -> Bool {
+    public func bindParam(_ i: UInt64) {
         self.paramBinds?[self.paramBindsOffset].buffer_type = MYSQL_TYPE_LONGLONG
         self.paramBinds?[self.paramBindsOffset].buffer_length = UInt(sizeof(UInt64))
         let a = UnsafeMutablePointer<UInt64>.allocatingCapacity(1)
@@ -825,11 +832,10 @@ public final class MySQLStmt {
         self.paramBinds?[self.paramBindsOffset].buffer = UnsafeMutablePointer<()>(a)
         
         self.paramBindsOffset += 1
-        return true
     }
 	
     /// create  String parameter binding
-	public func bindParam(_ s: String) -> Bool {
+	public func bindParam(_ s: String) {
 		let convertedTup = MySQL.convertString(s)
 		self.paramBinds?[self.paramBindsOffset].buffer_type = MYSQL_TYPE_VAR_STRING
 		self.paramBinds?[self.paramBindsOffset].buffer_length = UInt(convertedTup.1-1)
@@ -838,11 +844,10 @@ public final class MySQLStmt {
 		self.paramBinds?[self.paramBindsOffset].buffer = UnsafeMutablePointer<()>(convertedTup.0!)
 		
 		self.paramBindsOffset += 1
-		return true
 	}
 	
     /// create Blob parameter binding
-	public func bindParam(_ b: UnsafePointer<Int8>, length: Int) -> Bool {
+	public func bindParam(_ b: UnsafePointer<Int8>, length: Int) {
 		self.paramBinds?[self.paramBindsOffset].buffer_type = MYSQL_TYPE_LONG_BLOB
 		self.paramBinds?[self.paramBindsOffset].buffer_length = UInt(length)
 		self.paramBinds?[self.paramBindsOffset].length = UnsafeMutablePointer<UInt>.allocatingCapacity(1)
@@ -850,11 +855,10 @@ public final class MySQLStmt {
 		self.paramBinds?[self.paramBindsOffset].buffer = UnsafeMutablePointer<()>(b)
 		
 		self.paramBindsOffset += 1
-		return true
 	}
 	
     /// create binary blob parameter binding
-	public func bindParam(_ b: [UInt8]) -> Bool {
+	public func bindParam(_ b: [UInt8]) {
 		self.paramBinds?[self.paramBindsOffset].buffer_type = MYSQL_TYPE_LONG_BLOB
 		self.paramBinds?[self.paramBindsOffset].buffer_length = UInt(b.count)
 		self.paramBinds?[self.paramBindsOffset].length = UnsafeMutablePointer<UInt>.allocatingCapacity(1)
@@ -862,16 +866,13 @@ public final class MySQLStmt {
 		self.paramBinds?[self.paramBindsOffset].buffer = UnsafeMutablePointer<()>(b)
 		
 		self.paramBindsOffset += 1
-		return true
 	}
 	
 	/// create null parameter binding
-	public func bindParam() -> Bool {
+	public func bindParam() {
 		self.paramBinds?[self.paramBindsOffset].buffer_type = MYSQL_TYPE_NULL
 		self.paramBinds?[self.paramBindsOffset].length = UnsafeMutablePointer<UInt>.allocatingCapacity(1)
-		self.paramBindsOffset += 1
-		return true
-	}
+		self.paramBindsOffset += 1	}
 	
     
     //commented out Iterator Protocol until next() function can be implemented tt 04272016

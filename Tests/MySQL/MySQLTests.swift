@@ -85,16 +85,12 @@ class MySQLTests: XCTestCase {
 		let list = mysql.listDatabases()
 		
 		XCTAssert(list.count > 0)
-		
-		print(list)
 	}
 	
 	func testListDbs2() {
 		let list = mysql.listDatabases(wildcard: "information_%")
 		
 		XCTAssert(list.count > 0)
-		
-		print(list)
 	}
 	
 	func testListTables1() {
@@ -105,8 +101,6 @@ class MySQLTests: XCTestCase {
 		let list = mysql.listTables()
 		
 		XCTAssert(list.count > 0)
-		
-		print(list)
 	}
 	
 	func testListTables2() {
@@ -117,12 +111,10 @@ class MySQLTests: XCTestCase {
 		let list = mysql.listTables(wildcard: "INNODB_%")
 		
 		XCTAssert(list.count > 0)
-		
-		print(list)
 	}
 	
 	func testQuery1() {
-        mysql.query(statement: "DROP TABLE IF EXISTS test")
+        XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS test"))
 
 		let qres = mysql.query(statement: "CREATE TABLE test (id INT, d DOUBLE, s VARCHAR(1024))")
 		XCTAssert(qres == true, mysql.errorMessage())
@@ -138,12 +130,17 @@ class MySQLTests: XCTestCase {
 		let sres2 = mysql.query(statement: "SELECT id,d,s FROM test")
 		XCTAssert(sres2 == true, mysql.errorMessage())
 		
-		let results = mysql.storeResults()!
+        guard let results = mysql.storeResults() else {
+            XCTAssert(false, "mysql.storeResults() failed")
+            return
+        }
 		XCTAssert(results.numRows() == 10)
 		
-		while let row = results.next() {
-			print(row)
+        var count = 0
+		while let _ = results.next() {
+			count += 1
 		}
+        XCTAssert(count == 10)
 		
 		results.close()
 		
@@ -155,7 +152,7 @@ class MySQLTests: XCTestCase {
 	}
 	
 	func testQuery2() {
-        mysql.query(statement: "DROP TABLE IF EXISTS test")
+        XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS test"))
 
 		let qres = mysql.query(statement: "CREATE TABLE test (id INT, d DOUBLE, s VARCHAR(1024))")
 		XCTAssert(qres == true, mysql.errorMessage())
@@ -171,12 +168,17 @@ class MySQLTests: XCTestCase {
 		let sres2 = mysql.query(statement: "SELECT id,d,s FROM test")
 		XCTAssert(sres2 == true, mysql.errorMessage())
 		
-		let results = mysql.storeResults()!
+        guard let results = mysql.storeResults() else {
+            XCTAssert(false, "mysql.storeResults() failed")
+            return
+        }
 		XCTAssert(results.numRows() == 10)
 		
+        var count = 0
 		results.forEachRow { a in
-			print(a)
+			count += 1
 		}
+        XCTAssert(count == 10)
 		
 		results.close()
 		
@@ -188,7 +190,7 @@ class MySQLTests: XCTestCase {
 	}
     
     func testInsertNull() {
-        mysql.query(statement: "DROP TABLE IF EXISTS test")
+        XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS test"))
         
         let qres = mysql.query(statement: "CREATE TABLE test (id INT, d DOUBLE, s VARCHAR(1024))")
         XCTAssert(qres == true, mysql.errorMessage())
@@ -202,7 +204,10 @@ class MySQLTests: XCTestCase {
         let sres2 = mysql.query(statement: "SELECT id,d,s FROM test")
         XCTAssert(sres2 == true, mysql.errorMessage())
         
-        let results = mysql.storeResults()!
+        guard let results = mysql.storeResults() else {
+            XCTAssert(false, "mysql.storeResults() failed")
+            return
+        }
         XCTAssert(results.numRows() == 1)
         XCTAssert(results.numFields() == 3)
         
@@ -223,7 +228,7 @@ class MySQLTests: XCTestCase {
     }
 	
 	func testQueryStmt1() {
-		mysql.query(statement: "DROP TABLE IF EXISTS all_data_types")
+		XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS all_data_types"))
 		
 		let qres = mysql.query(statement: "CREATE TABLE `all_data_types` (`varchar` VARCHAR( 20 ),\n`tinyint` TINYINT,\n`text` TEXT,\n`date` DATE,\n`smallint` SMALLINT,\n`mediumint` MEDIUMINT,\n`int` INT,\n`bigint` BIGINT,\n`float` FLOAT( 10, 2 ),\n`double` DOUBLE,\n`decimal` DECIMAL( 10, 2 ),\n`datetime` DATETIME,\n`timestamp` TIMESTAMP,\n`time` TIME,\n`year` YEAR,\n`char` CHAR( 10 ),\n`tinyblob` TINYBLOB,\n`tinytext` TINYTEXT,\n`blob` BLOB,\n`mediumblob` MEDIUMBLOB,\n`mediumtext` MEDIUMTEXT,\n`longblob` LONGBLOB,\n`longtext` LONGTEXT,\n`enum` ENUM( '1', '2', '3' ),\n`set` SET( '1', '2', '3' ),\n`bool` BOOL,\n`binary` BINARY( 20 ),\n`varbinary` VARBINARY( 20 ) ) ENGINE = MYISAM")
 		XCTAssert(qres == true, mysql.errorMessage())
@@ -276,7 +281,7 @@ class MySQLTests: XCTestCase {
 	}
 	
 	func testQueryStmt2() {
-		mysql.query(statement: "DROP TABLE IF EXISTS all_data_types")
+		XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS all_data_types"))
 		
 		let qres = mysql.query(statement: "CREATE TABLE `all_data_types` (`varchar` VARCHAR( 20 ),\n`tinyint` TINYINT,\n`text` TEXT,\n`date` DATE,\n`smallint` SMALLINT,\n`mediumint` MEDIUMINT,\n`int` INT,\n`bigint` BIGINT,\n`ubigint` BIGINT UNSIGNED,\n`float` FLOAT( 10, 2 ),\n`double` DOUBLE,\n`decimal` DECIMAL( 10, 2 ),\n`datetime` DATETIME,\n`timestamp` TIMESTAMP,\n`time` TIME,\n`year` YEAR,\n`char` CHAR( 10 ),\n`tinyblob` TINYBLOB,\n`tinytext` TINYTEXT,\n`blob` BLOB,\n`mediumblob` MEDIUMBLOB,\n`mediumtext` MEDIUMTEXT,\n`longblob` LONGBLOB,\n`longtext` LONGTEXT,\n`enum` ENUM( '1', '2', '3' ),\n`set` SET( '1', '2', '3' ),\n`bool` BOOL,\n`binary` BINARY( 20 ),\n`varbinary` VARBINARY( 20 ) ) ENGINE = MYISAM")
 		XCTAssert(qres == true, mysql.errorMessage())
@@ -340,9 +345,6 @@ class MySQLTests: XCTestCase {
 			
 			let ok = results.forEachRow {
 				e in
-				print(e.flatMap({ (a:Any?) -> Any? in
-					return a!
-				}))
                 
                 XCTAssertEqual(e[0] as? String, "varchar 20 string 👻")
                 XCTAssertEqual(e[1] as? Int8, 1)
@@ -528,7 +530,7 @@ class MySQLTests: XCTestCase {
         
         let results = stmt.results()
         defer { results.close() }
-        results.forEachRow { row in
+        XCTAssert(results.forEachRow { row in
             XCTAssertEqual(row[0] as? Int8, -1)
             XCTAssertEqual(row[1] as? UInt8, 1)
             XCTAssertEqual(row[2] as? Int16, -2)
@@ -539,7 +541,7 @@ class MySQLTests: XCTestCase {
             XCTAssertEqual(row[7] as? UInt32, 4)
             XCTAssertEqual(row[8] as? Int64, -5)
             XCTAssertEqual(row[9] as? UInt64, 5)
-        }
+        })
     }
 
     func testStmtIntMin() {
@@ -575,7 +577,7 @@ class MySQLTests: XCTestCase {
         
         let results = stmt.results()
         defer { results.close() }
-        results.forEachRow { row in
+        XCTAssert(results.forEachRow { row in
             XCTAssertEqual(row[0] as? Int8, -128)
             XCTAssertEqual(row[1] as? UInt8, 0)
             XCTAssertEqual(row[2] as? Int16, -32768)
@@ -586,7 +588,7 @@ class MySQLTests: XCTestCase {
             XCTAssertEqual(row[7] as? UInt32, 0)
             XCTAssertEqual(row[8] as? Int64, -9223372036854775808)
             XCTAssertEqual(row[9] as? UInt64, 0)
-        }
+        })
     }
     
     func testStmtIntMax() {
@@ -622,7 +624,7 @@ class MySQLTests: XCTestCase {
         
         let results = stmt.results()
         defer { results.close() }
-        results.forEachRow { row in
+        XCTAssert(results.forEachRow { row in
             XCTAssertEqual(row[0] as? Int8, 127)
             XCTAssertEqual(row[1] as? UInt8, 255)
             XCTAssertEqual(row[2] as? Int16, 32767)
@@ -633,7 +635,7 @@ class MySQLTests: XCTestCase {
             XCTAssertEqual(row[7] as? UInt32, 4294967295)
             XCTAssertEqual(row[8] as? Int64, 9223372036854775807)
             XCTAssertEqual(row[9] as? UInt64, 18446744073709551615)
-        }
+        })
     }
     
     func testStmtDecimal() {
@@ -665,15 +667,14 @@ class MySQLTests: XCTestCase {
         
         let results = stmt.results()
         defer { results.close() }
-        results.forEachRow { row in
-            print(row)
+        XCTAssert(results.forEachRow { row in
             XCTAssertEqual(row[0] as? Float, 1.1)
             XCTAssertEqual(row[1] as? Float, -1.1)
             XCTAssertEqual(row[2] as? Double, 2.2)
             XCTAssertEqual(row[3] as? Double, -2.2)
             XCTAssertEqual(row[4] as? String, "3.3")
             XCTAssertEqual(row[5] as? String, "-3.3")
-        }
+        })
     }
 }
 
