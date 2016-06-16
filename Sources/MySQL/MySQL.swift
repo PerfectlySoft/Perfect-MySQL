@@ -196,15 +196,16 @@ public final class MySQL {
 		return String(validatingUTF8: mysql_get_client_info()) ?? ""
 	}
 	
+    private static var initOnce: Bool = {
+        mysql_server_init(0, nil, nil)
+        return true
+    }()
+    
     /// Create mysql server connection and set ptr
-	public init() {
-		
-		pthread_once(&MySQL.dispatchOnce) {
-			mysql_server_init(0, nil, nil)
-		}
-		
-		self.ptr = mysql_init(nil)
-	}
+    public init() {
+        _ = MySQL.initOnce
+        self.ptr = mysql_init(nil)
+    }
 	
 	deinit {
 		self.close()
