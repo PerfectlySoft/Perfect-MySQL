@@ -21,8 +21,9 @@ import XCTest
 @testable import MySQL
 
 let testHost = "127.0.0.1"
-let testUser = "root"
-let testPassword = ""
+let testUser = "testuser"
+// PLEASE change to whatever your actual password is before running these tests
+let testPassword = "testpassword"
 let testSchema = "test"
 
 class MySQLTests: XCTestCase {
