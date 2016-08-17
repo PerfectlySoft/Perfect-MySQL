@@ -1,7 +1,6 @@
 import XCTest
+@testable import MySQLTests
 
-import MySQLTestSuite
-
-var tests = [XCTestCaseEntry]()
-tests += MySQLTestSuite.allTests()
-XCTMain(tests)
+XCTMain([
+	testCase(MySQLTests.allTests),
+	])
