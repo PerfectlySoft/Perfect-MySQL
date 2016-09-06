@@ -71,7 +71,7 @@ Please note that Ubuntu 14 defaults to including a version of MySQL client which
 Add this project as a dependency in your Package.swift file.
 
 ```
-.Package(url:"https://github.com/PerfectlySoft/Perfect-MySQL.git", versions: Version(0,0,0)..<Version(10,0,0))
+.Package(url:"https://github.com/PerfectlySoft/Perfect-MySQL.git", majorVersion: 2, minor: 0)
 ```
 
 ## QuickStart
@@ -87,8 +87,8 @@ let package = Package(
  name: "PerfectTemplate",
  targets: [],
  dependencies: [
-     .Package(url:"https://github.com/PerfectlySoft/Perfect-HTTPServer.git", versions: Version(0,0,0)..<Version(10,0,0)),
-     .Package(url:"https://github.com/PerfectlySoft/Perfect-MySQL.git", versions: Version(0,0,0)..<Version(10,0,0))
+     .Package(url:"https://github.com/PerfectlySoft/Perfect-HTTPServer.git", majorVersion: 2, minor: 0),
+     .Package(url:"https://github.com/PerfectlySoft/Perfect-MySQL.git", majorVersion: 2, minor: 0)
     ]
 )
 ```
