@@ -21,9 +21,9 @@ import XCTest
 @testable import MySQL
 
 let testHost = "127.0.0.1"
-let testUser = "testuser"
+let testUser = "root"
 // PLEASE change to whatever your actual password is before running these tests
-let testPassword = "testpassword"
+let testPassword = ""//testpassword"
 let testSchema = "test"
 
 class MySQLTests: XCTestCase {
@@ -530,6 +530,7 @@ class MySQLTests: XCTestCase {
         XCTAssert(res == true, stmt.errorMessage())
         
         let results = stmt.results()
+		XCTAssert(results.numRows == 1)
         defer { results.close() }
         XCTAssert(results.forEachRow { row in
             XCTAssertEqual(row[0] as? Int8, -1)

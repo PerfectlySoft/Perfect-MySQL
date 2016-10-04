@@ -798,6 +798,7 @@ public final class MySQLStmt {
 			isNullBuffers = UnsafeMutablePointer<my_bool>.allocate(capacity: numFields)
 			
 			meta = mysql_stmt_result_metadata(self.stmt.ptr!)
+			mysql_stmt_store_result(self.stmt.ptr!)
 		}
 		
 		deinit {
