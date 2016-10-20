@@ -93,7 +93,7 @@ Please note that Ubuntu 14 defaults to including a version of MySQL client which
 
 Add this project as a dependency in your Package.swift file.
 
-```
+``` swift
 .Package(url:"https://github.com/PerfectlySoft/Perfect-MySQL.git", majorVersion: 2, minor: 0)
 ```
 
@@ -105,7 +105,7 @@ git clone https://github.com/PerfectlySoft/PerfectTemplate.git
 cd PerfectTemplate
 ```
 Add to the Package.swift file the dependency:
-```
+``` swift
 let package = Package(
  name: "PerfectTemplate",
  targets: [],
@@ -130,13 +130,13 @@ Important: When a dependancy has been added to the project, the Swift Package Ma
 Open main.swift from the Sources directory and edit according to the following instructions:
 
 Update import statements to include 
-```
+``` swift
 import PerfectLib
 import PerfectHTTP
 import PerfectHTTPServer
 ```
 Create an instance of HTTPServer and add routes:
-```
+``` swift
 // Create HTTP server.
 let server = HTTPServer()
 
@@ -157,7 +157,7 @@ server.addRoutes(routes)
 ```
 
 Verify server settings: 
-```
+``` swift
 // Set a listen port of 8181
 server.serverPort = 8181
 
@@ -170,11 +170,11 @@ server.documentRoot = "./webroot"
 Gather command line options and further configure the server.
 Run the server with --help to see the list of supported arguments.
 Command line arguments will supplant any of the values set above.
-```
+``` swift
 configureServer(server)
 ```
 Launch the server. Remember that any command after server.start() will not be reached.
-```
+``` swift
 do {
 	// Launch the HTTP server.
 	try server.start()
@@ -187,14 +187,14 @@ do {
 Add a file to your project, making sure that it is stored in the Sources directory of your file structure. Lets name it mysql_quickstart.swift for example.
 
 Import required libraries:
-```
+``` swift
 import PerfectLib
 import MySQL
 import PerfectHTTP
 ```
 
 Setup the credentials for your connection: 
-```
+``` swift
 let testHost = "127.0.0.1"
 let testUser = "test"
 // PLEASE change to whatever your actual password is before running these tests
@@ -203,13 +203,13 @@ let testSchema = "schema"
 ```
 
 Create an instance of the MySQL class
-```
+``` swift
 let dataMysql = MySQL()
 ```
 
 This function, referenced from the route in main.swift, will setup and use a MySQL connection
 
-```
+``` swift
 public func useMysql(_ request: HTTPRequest, response: HTTPResponse) {
     
     // need to make sure something is available.
