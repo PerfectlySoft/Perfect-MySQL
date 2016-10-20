@@ -502,6 +502,23 @@ public final class MySQLStmt {
 	private var ptr: UnsafeMutablePointer<MYSQL_STMT>?
 	private var paramBinds = UnsafeMutablePointer<MYSQL_BIND>(nil as OpaquePointer?)
 	private var paramBindsOffset = 0
+
+	public func fieldNames() -> [Int: String] {
+
+		var fieldDictionary = [Int: String]()
+		let fields = mysql_fetch_fields(mysql_stmt_result_metadata(self.ptr!))
+		let columnCount = Int(self.fieldCount())
+
+		var i = 0
+
+		while i != columnCount {
+			fieldDictionary[i] = String(cString: fields![i].name)
+			i += 1
+		}
+
+		return fieldDictionary
+
+	}
 	
     /// Possible status for fetch results
 	public enum FetchResult {
