@@ -64,3 +64,5 @@ fastlane/screenshots
 
 Packages/
 MySQL.xcodeproj/
+.DS_Store
+docs/

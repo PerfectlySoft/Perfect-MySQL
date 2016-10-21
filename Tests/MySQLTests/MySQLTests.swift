@@ -678,6 +678,21 @@ class MySQLTests: XCTestCase {
             XCTAssertEqual(row[5] as? String, "-3.3")
         })
     }
+	
+	func testFieldInfo() {
+		XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS testdb"), mysql.errorMessage())
+		XCTAssert(mysql.query(statement: "CREATE TABLE testdb (a VARCHAR( 20 ),\nb TINYINT,\nc TEXT,\nd DATE,\ne SMALLINT,\nf MEDIUMINT,\ng INT,\nh BIGINT,\ni BIGINT UNSIGNED,\nj FLOAT( 10, 2 ))"), mysql.errorMessage())
+		let stmt = MySQLStmt(mysql)
+		defer { stmt.close() }
+		_ = stmt.prepare(statement: "SELECT * FROM testdb WHERE 0=1")
+		for index in 0..<Int(stmt.fieldCount()) {
+			guard let fieldInfo = stmt.fieldInfo(index: index) else {
+				XCTAssert(false)
+				continue
+			}
+		}
+	}
+ 
 }
 
 extension MySQLTests {
@@ -701,7 +716,9 @@ extension MySQLTests {
                    ("testStmtInt", testStmtInt),
                    ("testStmtIntMin", testStmtIntMin),
                    ("testStmtIntMax", testStmtIntMax),
-                   ("testStmtDecimal", testStmtDecimal)
+                   ("testStmtDecimal", testStmtDecimal),
+                   ("testFieldInfo", testFieldInfo)
+			
         ]
     }
 }

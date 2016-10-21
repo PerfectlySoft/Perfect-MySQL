@@ -502,7 +502,8 @@ public final class MySQLStmt {
 	private var ptr: UnsafeMutablePointer<MYSQL_STMT>?
 	private var paramBinds = UnsafeMutablePointer<MYSQL_BIND>(nil as OpaquePointer?)
 	private var paramBindsOffset = 0
-
+	var meta: UnsafeMutablePointer<MYSQL_RES>?
+	
 	public func fieldNames() -> [Int: String] {
 
 		var fieldDictionary = [Int: String]()
@@ -518,6 +519,65 @@ public final class MySQLStmt {
 
 		return fieldDictionary
 
+	}
+	
+	public enum FieldType {
+		case integer,
+		double,
+		bytes,
+		string,
+		date,
+		null
+	}
+	
+	public struct FieldInfo {
+		let name: String
+		let type: FieldType
+	}
+	
+	public func fieldInfo(index: Int) -> FieldInfo? {
+		let fieldCount = Int(self.fieldCount())
+		guard index < fieldCount else {
+			return nil
+		}
+		guard let field = mysql_fetch_field_direct(meta, UInt32(index)) else {
+			return nil
+		}
+		let f: MYSQL_FIELD = field.pointee
+		return FieldInfo(name: String(validatingUTF8: f.name) ?? "invalid field name", type: mysqlTypeToFieldType(f.type))
+	}
+	
+	func mysqlTypeToFieldType(_ type: enum_field_types) -> FieldType {
+		switch type {
+		case MYSQL_TYPE_NULL:
+			return .null
+		case MYSQL_TYPE_FLOAT,
+		     MYSQL_TYPE_DOUBLE:
+			return .double
+		case MYSQL_TYPE_TINY,
+		     MYSQL_TYPE_SHORT,
+		     MYSQL_TYPE_LONG,
+		     MYSQL_TYPE_INT24,
+		     MYSQL_TYPE_LONGLONG:
+			return .integer
+		case MYSQL_TYPE_TIMESTAMP,
+		     MYSQL_TYPE_DATE,
+		     MYSQL_TYPE_TIME,
+		     MYSQL_TYPE_DATETIME,
+		     MYSQL_TYPE_YEAR,
+		     MYSQL_TYPE_NEWDATE:
+			return .date
+		case MYSQL_TYPE_TINY_BLOB,
+		     MYSQL_TYPE_MEDIUM_BLOB,
+		     MYSQL_TYPE_LONG_BLOB,
+		     MYSQL_TYPE_BLOB:
+			return .bytes
+		case MYSQL_TYPE_DECIMAL,
+		     MYSQL_TYPE_NEWDECIMAL:
+			return .string
+		default:
+			return .string
+		}
 	}
 	
     /// Possible status for fetch results
@@ -537,6 +597,10 @@ public final class MySQLStmt {
     /// close and free mysql statement structure pointer
 	public func close() {
 		clearBinds()
+		if let meta = self.meta {
+			mysql_free_result(meta)
+			self.meta = nil
+		}
 		if self.ptr != nil {
 			mysql_stmt_close(self.ptr!)
 			self.ptr = nil
@@ -608,6 +672,10 @@ public final class MySQLStmt {
 		guard r == 0 else {
 			return false
 		}
+		if let meta = self.meta {
+			mysql_free_result(meta)
+		}
+		self.meta = mysql_stmt_result_metadata(ptr!)
 		let count = self.paramCount()
 		if count > 0 {
 			self.paramBinds = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: count)
@@ -799,22 +867,19 @@ public final class MySQLStmt {
         /// Field count for result set
 		public let numFields: Int
 		
-		var meta: UnsafeMutablePointer<MYSQL_RES>?
+		var meta: UnsafeMutablePointer<MYSQL_RES>? { return stmt.meta }
 		let binds: UnsafeMutablePointer<MYSQL_BIND>
 		
 		let lengthBuffers: UnsafeMutablePointer<UInt>
 		let isNullBuffers: UnsafeMutablePointer<my_bool>
+		private var closed = false
 		
 		init(_ stmt: MySQLStmt) {
 			self.stmt = stmt
 			numFields = Int(stmt.fieldCount())
-			
 			binds = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: numFields)
-			
 			lengthBuffers = UnsafeMutablePointer<UInt>.allocate(capacity: numFields)
 			isNullBuffers = UnsafeMutablePointer<my_bool>.allocate(capacity: numFields)
-			
-			meta = mysql_stmt_result_metadata(self.stmt.ptr!)
 			mysql_stmt_store_result(self.stmt.ptr!)
 		}
 		
@@ -824,16 +889,13 @@ public final class MySQLStmt {
 		
         /// Release results set
 		public func close() {
-			if let meta = self.meta {
-				mysql_free_result(meta)
-				
-				binds.deallocate(capacity: numFields)
-				
-				lengthBuffers.deallocate(capacity: numFields)
-				isNullBuffers.deallocate(capacity: numFields)
-				
-				self.meta = nil
+			guard !closed else {
+				return
 			}
+			closed = true
+			binds.deallocate(capacity: numFields)
+			lengthBuffers.deallocate(capacity: numFields)
+			isNullBuffers.deallocate(capacity: numFields)
 		}
 		
         /// Row count for current set
@@ -841,7 +903,6 @@ public final class MySQLStmt {
 			return Int(self.stmt.numRows())
 		}
 		
-        
         /* unimplemented
 		public func next() -> Element? {
 			
