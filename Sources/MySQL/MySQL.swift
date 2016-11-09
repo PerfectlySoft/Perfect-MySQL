@@ -531,8 +531,8 @@ public final class MySQLStmt {
 	}
 	
 	public struct FieldInfo {
-		let name: String
-		let type: FieldType
+		public let name: String
+		public let type: FieldType
 	}
 	
 	public func fieldInfo(index: Int) -> FieldInfo? {
