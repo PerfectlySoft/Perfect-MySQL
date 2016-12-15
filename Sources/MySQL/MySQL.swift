@@ -544,11 +544,11 @@ public final class MySQLStmt {
 			return nil
 		}
 		let f: MYSQL_FIELD = field.pointee
-		return FieldInfo(name: String(validatingUTF8: f.name) ?? "invalid field name", type: mysqlTypeToFieldType(f.type))
+		return FieldInfo(name: String(validatingUTF8: f.name) ?? "invalid field name", type: mysqlTypeToFieldType(field))
 	}
 	
-	func mysqlTypeToFieldType(_ type: enum_field_types) -> FieldType {
-		switch type {
+	func mysqlTypeToFieldType(_ field: UnsafeMutablePointer<MYSQL_FIELD>) -> FieldType {
+		switch field.pointee.type {
 		case MYSQL_TYPE_NULL:
 			return .null
 		case MYSQL_TYPE_FLOAT,
@@ -567,14 +567,18 @@ public final class MySQLStmt {
 		     MYSQL_TYPE_YEAR,
 		     MYSQL_TYPE_NEWDATE:
 			return .date
+		case MYSQL_TYPE_DECIMAL,
+		     MYSQL_TYPE_NEWDECIMAL:
+			return .string
 		case MYSQL_TYPE_TINY_BLOB,
 		     MYSQL_TYPE_MEDIUM_BLOB,
 		     MYSQL_TYPE_LONG_BLOB,
 		     MYSQL_TYPE_BLOB:
-			return .bytes
-		case MYSQL_TYPE_DECIMAL,
-		     MYSQL_TYPE_NEWDECIMAL:
-			return .string
+			if ( (field.pointee.flags & UInt32(BINARY_FLAG)) != 0)
+			{
+				return .bytes
+			}
+			fallthrough
 		default:
 			return .string
 		}
@@ -903,57 +907,88 @@ public final class MySQLStmt {
 			return Int(self.stmt.numRows())
 		}
 		
-        /* unimplemented
-		public func next() -> Element? {
-			
-			return nil
-		}
-		*/
 		enum GeneralType {
-			case Integer(enum_field_types),
-				Double(enum_field_types),
-				Bytes(enum_field_types),
-				String(enum_field_types),
-				Date(enum_field_types),
-				Null
+			case integer(enum_field_types),
+				double(enum_field_types),
+				bytes(enum_field_types),
+				string(enum_field_types),
+				date(enum_field_types),
+				null
 		}
 		
-		func mysqlTypeToGeneralType(_ type: enum_field_types) -> GeneralType {
+		func mysqlTypeToGeneralType(_ field: UnsafeMutablePointer<MYSQL_FIELD>) -> GeneralType {
+			let type = field.pointee.type
 			switch type {
 			case MYSQL_TYPE_NULL:
-				return .Null
+				return .null
 			case MYSQL_TYPE_FLOAT,
 				MYSQL_TYPE_DOUBLE:
-				return .Double(type)
+				return .double(type)
 			case MYSQL_TYPE_TINY,
 				MYSQL_TYPE_SHORT,
 				MYSQL_TYPE_LONG,
 				MYSQL_TYPE_INT24,
 				MYSQL_TYPE_LONGLONG:
-				return .Integer(type)
+				return .integer(type)
 			case MYSQL_TYPE_TIMESTAMP,
 				MYSQL_TYPE_DATE,
 				MYSQL_TYPE_TIME,
 				MYSQL_TYPE_DATETIME,
 				MYSQL_TYPE_YEAR,
 				MYSQL_TYPE_NEWDATE:
-				return .Date(type)
+				return .date(type)
+			case MYSQL_TYPE_DECIMAL,
+				MYSQL_TYPE_NEWDECIMAL:
+				return .string(type)
 			case MYSQL_TYPE_TINY_BLOB,
 				MYSQL_TYPE_MEDIUM_BLOB,
 				MYSQL_TYPE_LONG_BLOB,
 				MYSQL_TYPE_BLOB:
-				return .Bytes(type)
+				if ( (field.pointee.flags & UInt32(BINARY_FLAG)) != 0)
+				{
+					return .bytes(type)
+				}
+				fallthrough
+			default:
+				return .string(type)
+			}
+		}
+		
+		func mysqlTypeToGeneralType(_ type: enum_field_types) -> GeneralType {
+			switch type {
+			case MYSQL_TYPE_NULL:
+				return .null
+			case MYSQL_TYPE_FLOAT,
+				MYSQL_TYPE_DOUBLE:
+				return .double(type)
+			case MYSQL_TYPE_TINY,
+				MYSQL_TYPE_SHORT,
+				MYSQL_TYPE_LONG,
+				MYSQL_TYPE_INT24,
+				MYSQL_TYPE_LONGLONG:
+				return .integer(type)
+			case MYSQL_TYPE_TIMESTAMP,
+				MYSQL_TYPE_DATE,
+				MYSQL_TYPE_TIME,
+				MYSQL_TYPE_DATETIME,
+				MYSQL_TYPE_YEAR,
+				MYSQL_TYPE_NEWDATE:
+				return .date(type)
 			case MYSQL_TYPE_DECIMAL,
 				MYSQL_TYPE_NEWDECIMAL:
-				return .String(type)
+				return .string(type)
+			case MYSQL_TYPE_TINY_BLOB,
+				MYSQL_TYPE_MEDIUM_BLOB,
+				MYSQL_TYPE_LONG_BLOB,
+				MYSQL_TYPE_BLOB:
+				return .bytes(type)
 			default:
-				return .String(type)
+				return .string(type)
 			}
 		}
 		
 		func bindField(_ field: UnsafeMutablePointer<MYSQL_FIELD>) -> MYSQL_BIND {
-			let fieldType = field.pointee.type
-			let generalType = mysqlTypeToGeneralType(fieldType)
+			let generalType = mysqlTypeToGeneralType(field)
 			let bind = bindToType(generalType)
 			return bind
 		}
@@ -981,9 +1016,9 @@ public final class MySQLStmt {
 				bind.is_null = isNullBuffers.advanced(by: i)
 				bind.is_null.initialize(to: 0)
 				
-				let genType = mysqlTypeToGeneralType(bind.buffer_type)
+				let genType = mysqlTypeToGeneralType(field)
 				switch genType {
-				case .Double:
+				case .double:
                     switch bind.buffer_type {
                     case MYSQL_TYPE_FLOAT:
                         bind = bindBuffer(bind, type: Float.self);
@@ -991,7 +1026,7 @@ public final class MySQLStmt {
                         bind = bindBuffer(bind, type: Double.self);
                     default: break
                     }
-                case .Integer:
+                case .integer:
                     if (f.flags & _UNSIGNED_FLAG) == _UNSIGNED_FLAG {
                         bind.is_unsigned = 1
                         switch bind.buffer_type {
@@ -1018,7 +1053,7 @@ public final class MySQLStmt {
                         default: break
                         }
                     }
-				case .Bytes, .String, .Date, .Null:
+				case .bytes, .string, .date, .null:
 					bind.buffer = scratch
 					bind.buffer_length = 0
 				}
@@ -1031,7 +1066,7 @@ public final class MySQLStmt {
 					let bind = binds[i]
 					let genType = mysqlTypeToGeneralType(bind.buffer_type)
 					switch genType {
-					case .Double:
+					case .double:
                         switch bind.buffer_type {
                         case MYSQL_TYPE_FLOAT:
                             bind.buffer.assumingMemoryBound(to: Float.self).deallocate(capacity: 1)
@@ -1039,7 +1074,7 @@ public final class MySQLStmt {
                             bind.buffer.assumingMemoryBound(to: Double.self).deallocate(capacity: 1)
                         default: break
                         }
-					case .Integer:
+					case .integer:
                         if bind.is_unsigned == 1 {
                             switch bind.buffer_type {
                             case MYSQL_TYPE_LONGLONG:
@@ -1065,7 +1100,7 @@ public final class MySQLStmt {
                             default: break
                             }
                         }
-					case .Bytes, .String, .Date, .Null:
+					case .bytes, .string, .date, .null:
 						() // do nothing. these were cleaned right after use or not allocated at all
 					}
 				}
@@ -1098,7 +1133,7 @@ public final class MySQLStmt {
 					} else {
 						
 						switch genType {
-						case .Double:
+						case .double:
                             switch bind.buffer_type {
                             case MYSQL_TYPE_FLOAT:
                                 let f = bind.buffer.assumingMemoryBound(to: Float.self).pointee
@@ -1108,7 +1143,7 @@ public final class MySQLStmt {
                                 row.append(f)
                             default: break
                             }
-						case .Integer:
+						case .integer:
                             if bind.is_unsigned == 1 {
                                 switch bind.buffer_type {
                                 case MYSQL_TYPE_LONGLONG:
@@ -1142,7 +1177,7 @@ public final class MySQLStmt {
                                 default: break
                                 }
                             }
-						case .Bytes:
+						case .bytes:
 							
 							let raw = UnsafeMutablePointer<UInt8>.allocate(capacity: length)
 							defer {
@@ -1163,7 +1198,7 @@ public final class MySQLStmt {
 							}
 							row.append(a)
 							
-						case .String, .Date:
+						case .string, .date:
 							
 							let raw = UnsafeMutablePointer<UInt8>.allocate(capacity: length)
 							defer {
@@ -1180,7 +1215,7 @@ public final class MySQLStmt {
 							let s = UTF8Encoding.encode(generator: GenerateFromPointer(from: raw, count: length))
 							row.append(s)
 							
-						case .Null:
+						case .null:
 							row.append(nil)
 						}
 					}
@@ -1193,15 +1228,15 @@ public final class MySQLStmt {
 		
 		func bindToType(_ type: GeneralType) -> MYSQL_BIND {
 			switch type {
-			case .Double(let s):
+			case .double(let s):
 				return bindToIntegral(s)
-			case .Integer(let s):
+			case .integer(let s):
 				return bindToIntegral(s)
-			case .Bytes:
+			case .bytes:
 				return bindToBlob()
-			case .String, .Date:
+			case .string, .date:
 				return bindToString()
-			case .Null:
+			case .null:
 				return bindToNull()
 			}
 		}

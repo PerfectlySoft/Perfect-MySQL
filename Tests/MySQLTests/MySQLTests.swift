@@ -349,7 +349,7 @@ class MySQLTests: XCTestCase {
                 
                 XCTAssertEqual(e[0] as? String, "varchar 20 string 👻")
                 XCTAssertEqual(e[1] as? Int8, 1)
-				XCTAssertEqual(UTF8Encoding.encode(bytes: e[2] as! [UInt8]), "text string")
+				XCTAssertEqual(e[2] as? String, "text string")
                 XCTAssertEqual(e[3] as? String, "2015-10-21")
                 XCTAssertEqual(e[4] as? Int16, 32767)
                 XCTAssertEqual(e[5] as? Int32, 8388607)
@@ -365,12 +365,12 @@ class MySQLTests: XCTestCase {
                 XCTAssertEqual(e[15] as? String, "2015")
                 XCTAssertEqual(e[16] as? String, "K")
                 XCTAssertEqual(UTF8Encoding.encode(bytes: e[17] as! [UInt8]), "BLOB DATA")
-                XCTAssertEqual(UTF8Encoding.encode(bytes: e[18] as! [UInt8]), "tiny text string")
+                XCTAssertEqual(e[18] as? String, "tiny text string")
                 XCTAssertEqual(UTF8Encoding.encode(bytes: e[19] as! [UInt8]), "BLOB DATA")
                 XCTAssertEqual(UTF8Encoding.encode(bytes: e[20] as! [UInt8]), "BLOB DATA")
-                XCTAssertEqual(UTF8Encoding.encode(bytes: e[21] as! [UInt8]), "medium text string")
+                XCTAssertEqual(e[21] as? String, "medium text string")
                 XCTAssertEqual(UTF8Encoding.encode(bytes: e[22] as! [UInt8]), "BLOB DATA")
-                XCTAssertEqual(UTF8Encoding.encode(bytes: e[23] as! [UInt8]), "long text string")
+                XCTAssertEqual(e[23] as? String, "long text string")
                 XCTAssertEqual(e[24] as? String, "1")
                 XCTAssertEqual(e[25] as? String, "2")
                 XCTAssertEqual(e[26] as? Int8, 1)
@@ -686,7 +686,7 @@ class MySQLTests: XCTestCase {
 		defer { stmt.close() }
 		_ = stmt.prepare(statement: "SELECT * FROM testdb WHERE 0=1")
 		for index in 0..<Int(stmt.fieldCount()) {
-			guard let fieldInfo = stmt.fieldInfo(index: index) else {
+			guard let _ = stmt.fieldInfo(index: index) else {
 				XCTAssert(false)
 				continue
 			}
