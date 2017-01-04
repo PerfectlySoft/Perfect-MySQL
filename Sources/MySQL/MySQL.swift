@@ -319,6 +319,10 @@ public final class MySQL {
 	#endif
 		return MySQL.Results(ret)
 	}
+    
+    public func lastInsertId() -> Int64 {
+        return Int64(mysql_insert_id(self.ptr!))
+    }
 	
 	func exposedOptionToMySQLOption(_ o: MySQLOpt) -> mysql_option {
 		switch o {
