@@ -323,6 +323,10 @@ public final class MySQL {
     public func lastInsertId() -> Int64 {
         return Int64(mysql_insert_id(self.ptr!))
     }
+    
+    public func numberAffectedRows() -> Int64 {
+        return Int64(mysql_affected_rows(self.ptr!))
+    }
 	
 	func exposedOptionToMySQLOption(_ o: MySQLOpt) -> mysql_option {
 		switch o {
