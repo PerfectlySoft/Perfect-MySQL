@@ -79,6 +79,15 @@ Unfortunately, at this point in time you will need to edit the mysqlclient.pc fi
 
 Remove the occurrance of "-fno-omit-frame-pointer". This file is read-only by default so you will need to change that first.
 
+If you get a **link error** while build in Xcode, please, close XCode, open a New terminal, go to the place where you have your Packages.swift and build the project again:
+
+```
+swift package generate-xcodeproj
+```
+After this you have to set the path for libraries again.
+
+
+
 ## Linux Build Notes
 
 Ensure that you have installed libmysqlclient-dev for MySQL version *5.6 or greater*.
