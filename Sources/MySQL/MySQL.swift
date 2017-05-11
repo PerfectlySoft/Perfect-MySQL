@@ -215,7 +215,7 @@ public final class MySQL {
 			self.cleanConvertedString(socketOrBlank)
 		}
 		
-		let check = mysql_real_connect(self.ptr!, hostOrBlank.0!, userOrBlank.0!, passwordOrBlank.0!, dbOrBlank.0!, port, socketOrBlank.0!, flag)
+		let check = mysql_real_connect(self.ptr!, hostOrBlank.0, userOrBlank.0, passwordOrBlank.0, dbOrBlank.0, port, socketOrBlank.0, flag)
 		return check != nil && check == self.ptr
 	}
 	
