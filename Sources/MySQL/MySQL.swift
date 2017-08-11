@@ -637,7 +637,8 @@ public final class MySQLStmt {
 					MYSQL_TYPE_DATE.rawValue,
 					MYSQL_TYPE_DATETIME.rawValue:
 					bind.buffer.assumingMemoryBound(to: Int8.self).deallocate(capacity: Int(bind.buffer_length))
-				case MYSQL_TYPE_LONG_BLOB.rawValue:
+				case MYSQL_TYPE_LONG_BLOB.rawValue,
+				     MYSQL_TYPE_NULL.rawValue:
 					()
 				default:
 					assertionFailure("Unhandled MySQL type \(bind.buffer_type)")
