@@ -771,7 +771,22 @@ public final class MySQLStmt {
 		let r = mysql_stmt_param_count(self.ptr!)
 		return Int(r)
 	}
-	
+
+	public func bindParam(_ v: Any) {
+		switch v {
+			case is Double:
+				self.bindParam(v as! Double)
+			case is Int:
+				self.bindParam(v as! Int)
+			case is UInt64:
+				self.bindParam(v as! UInt64)
+			case is String:
+				self.bindParam(v as! String)
+			default:
+				self.bindParam()
+		}
+	}
+
 	func bindParam(_ s: String, type: enum_field_types) {
 		let convertedTup = MySQL.convertString(s)
 		self.paramBinds?[self.paramBindsOffset].buffer_type = type
