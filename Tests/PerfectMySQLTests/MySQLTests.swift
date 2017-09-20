@@ -18,7 +18,7 @@
 //
 
 import XCTest
-@testable import MySQL
+@testable import PerfectMySQL
 
 let testHost = "127.0.0.1"
 let testUser = "root"
@@ -26,7 +26,7 @@ let testUser = "root"
 let testPassword = ""//testpassword"
 let testSchema = "test"
 
-class MySQLTests: XCTestCase {
+class PerfectMySQLTests: XCTestCase {
     var mysql: MySQL!
 
     override func setUp() {
@@ -743,8 +743,8 @@ class MySQLTests: XCTestCase {
  
 }
 
-extension MySQLTests {
-    static var allTests : [(String, (MySQLTests) -> () throws -> ())] {
+extension PerfectMySQLTests {
+    static var allTests : [(String, (PerfectMySQLTests) -> () throws -> ())] {
         return [
                    ("testConnect", testConnect),
                    ("testListDbs1", testListDbs1),
