@@ -1,0 +1,16 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "mysqlclient",
+        "repositoryURL": "https://github.com/PerfectlySoft/Perfect-mysqlclient.git",
+        "state": {
+          "branch": null,
+          "revision": "51991fc81e40ddef36e8db1868c9b7f1f83d30dc",
+          "version": "2.0.1"
+        }
+      }
+    ]
+  },
+  "version": 1
+}
