@@ -141,6 +141,14 @@ public final class MySQL {
 	deinit {
 		self.close()
 	}
+
+  public func ping() -> Bool {
+    if let ref = ptr, 0 == mysql_ping(ref) {
+      return true
+    } else {
+      return false
+    }
+  }
 	
     /// Close connection and set ptr to nil
 	public func close() {

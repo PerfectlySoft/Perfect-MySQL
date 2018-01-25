@@ -744,8 +744,17 @@ class PerfectMySQLTests: XCTestCase {
 }
 
 extension PerfectMySQLTests {
+  func testPing() {
+    XCTAssertTrue(mysql.ping())
+    mysql.close()
+    XCTAssertFalse(mysql.ping())
+  }
+}
+
+extension PerfectMySQLTests {
     static var allTests : [(String, (PerfectMySQLTests) -> () throws -> ())] {
         return [
+                   ("testPing", testPing),
                    ("testConnect", testConnect),
                    ("testListDbs1", testListDbs1),
                    ("testListDbs2", testListDbs2),
