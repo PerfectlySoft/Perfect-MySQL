@@ -21,7 +21,7 @@ import XCTest
 #if !os(OSX)
 public func allTests() -> [XCTestCaseEntry] {
 	return [
-			testCase(MySQLTests.allTests)
+			testCase(PerfectMySQLTests.allTests)
 	]
 }
 #endif

@@ -18,7 +18,7 @@
 //
 
 import XCTest
-@testable import MySQL
+@testable import PerfectMySQL
 
 let testHost = "127.0.0.1"
 let testUser = "root"
@@ -26,7 +26,7 @@ let testUser = "root"
 let testPassword = ""//testpassword"
 let testSchema = "test"
 
-class MySQLTests: XCTestCase {
+class PerfectMySQLTests: XCTestCase {
     var mysql: MySQL!
 
     override func setUp() {
@@ -678,6 +678,54 @@ class MySQLTests: XCTestCase {
             XCTAssertEqual(row[5] as? String, "-3.3")
         })
     }
+    
+    func testStmtNull() {
+        XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS null_test"), mysql.errorMessage())
+        XCTAssert(mysql.query(statement: "CREATE TABLE null_test (a TINYINT, au TINYINT UNSIGNED, b SMALLINT, bu SMALLINT UNSIGNED, c MEDIUMINT, cu MEDIUMINT UNSIGNED, d INT, du INT UNSIGNED, e BIGINT, eu BIGINT UNSIGNED)"), mysql.errorMessage())
+        
+        let stmt = MySQLStmt(mysql)
+        defer { stmt.close() }
+        var res = stmt.prepare(statement: "INSERT INTO null_test (a, au, b, bu, c, cu, d, du, e, eu) VALUES "
+            + "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        XCTAssert(res == true, stmt.errorMessage())
+        
+        stmt.bindParam()
+        stmt.bindParam()
+        stmt.bindParam()
+        stmt.bindParam()
+        stmt.bindParam()
+        stmt.bindParam()
+        stmt.bindParam()
+        stmt.bindParam()
+        stmt.bindParam()
+        stmt.bindParam()
+        
+        res = stmt.execute()
+        XCTAssert(res == true, stmt.errorMessage())
+        
+        stmt.reset()
+        res = stmt.prepare(statement: "SELECT * FROM null_test")
+        XCTAssert(res == true, stmt.errorMessage())
+        
+        res = stmt.execute()
+        XCTAssert(res == true, stmt.errorMessage())
+        
+        let results = stmt.results()
+        XCTAssert(results.numRows == 1)
+        defer { results.close() }
+        XCTAssert(results.forEachRow { row in
+            XCTAssertNil(row[0])
+            XCTAssertNil(row[1])
+            XCTAssertNil(row[2])
+            XCTAssertNil(row[3])
+            XCTAssertNil(row[4])
+            XCTAssertNil(row[5])
+            XCTAssertNil(row[6])
+            XCTAssertNil(row[7])
+            XCTAssertNil(row[8])
+            XCTAssertNil(row[9])
+        })
+    }
 	
 	func testFieldInfo() {
 		XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS testdb"), mysql.errorMessage())
@@ -695,9 +743,18 @@ class MySQLTests: XCTestCase {
  
 }
 
-extension MySQLTests {
-    static var allTests : [(String, (MySQLTests) -> () throws -> ())] {
+extension PerfectMySQLTests {
+  func testPing() {
+    XCTAssertTrue(mysql.ping())
+    mysql.close()
+    XCTAssertFalse(mysql.ping())
+  }
+}
+
+extension PerfectMySQLTests {
+    static var allTests : [(String, (PerfectMySQLTests) -> () throws -> ())] {
         return [
+                   ("testPing", testPing),
                    ("testConnect", testConnect),
                    ("testListDbs1", testListDbs1),
                    ("testListDbs2", testListDbs2),

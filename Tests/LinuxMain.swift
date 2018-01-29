@@ -1,6 +1,6 @@
 import XCTest
-@testable import MySQLTests
+@testable import PerfectMySQLTests
 
 XCTMain([
-	testCase(MySQLTests.allTests),
+	testCase(PerfectMySQLTests.allTests),
 	])
