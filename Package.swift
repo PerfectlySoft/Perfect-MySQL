@@ -24,17 +24,15 @@ let package = Package(
     name: "PerfectMySQL",
     targets: [],
     dependencies: [
-                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient.git", majorVersion: 2, minor: 0)
-    ],
-    exclude: []
+                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient.git", majorVersion: 2)
+    ]
 )
 #else
 let package = Package(
     name: "PerfectMySQL",
     targets: [],
     dependencies: [
-                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient-Linux.git", majorVersion: 2, minor: 0)
-    ],
-    exclude: []
+                      .Package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient-Linux.git", majorVersion: 2)
+    ]
 )
 #endif

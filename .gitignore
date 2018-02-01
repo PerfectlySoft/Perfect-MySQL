@@ -63,6 +63,10 @@ fastlane/report.xml
 fastlane/screenshots
 
 Packages/
-MySQL.xcodeproj/
+*.xcodeproj/
 .DS_Store
 docs/
+.build*
+*.pins
+*.resolved
+
