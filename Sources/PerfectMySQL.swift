@@ -283,16 +283,22 @@ public final class MySQL {
 		return result
 	}
 	
+    /// Toggle autocommit state for transactions
+        public func autocommit(_ state: Int8) -> Bool {
+            let r = mysql_autocommit(self.ptr!, state)
+            return r == 0
+        }
+	
     /// Commits the transaction
 	public func commit() -> Bool {
 		let r = mysql_commit(self.ptr!)
-		return r == 1
+		return r == 0
 	}
 	
     /// Rolls back the transaction
 	public func rollback() -> Bool {
 		let r = mysql_rollback(self.ptr!)
-		return r == 1
+		return r == 0
 	}
 	
     /// Checks whether any more results exist
