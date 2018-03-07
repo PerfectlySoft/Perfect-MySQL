@@ -130,20 +130,19 @@ class PerfectMySQLTests: XCTestCase {
 		
 		let sres2 = mysql.query(statement: "SELECT id,d,s FROM test")
 		XCTAssert(sres2 == true, mysql.errorMessage())
-		
-        guard let results = mysql.storeResults() else {
-            XCTAssert(false, "mysql.storeResults() failed")
-            return
-        }
-		XCTAssert(results.numRows() == 10)
-		
-        var count = 0
-		while let _ = results.next() {
-			count += 1
+		do {
+			guard let results = mysql.storeResults() else {
+				XCTAssert(false, "mysql.storeResults() failed")
+				return
+			}
+			XCTAssert(results.numRows() == 10)
+			
+			var count = 0
+			while let _ = results.next() {
+				count += 1
+			}
+			XCTAssert(count == 10)
 		}
-        XCTAssert(count == 10)
-		
-		results.close()
 		
 		let qres2 = mysql.query(statement: "DROP TABLE test")
 		XCTAssert(qres2 == true, mysql.errorMessage())
@@ -169,19 +168,19 @@ class PerfectMySQLTests: XCTestCase {
 		let sres2 = mysql.query(statement: "SELECT id,d,s FROM test")
 		XCTAssert(sres2 == true, mysql.errorMessage())
 		
-        guard let results = mysql.storeResults() else {
-            XCTAssert(false, "mysql.storeResults() failed")
-            return
-        }
-		XCTAssert(results.numRows() == 10)
-		
-        var count = 0
-		results.forEachRow { a in
-			count += 1
+		do {
+			guard let results = mysql.storeResults() else {
+				XCTAssert(false, "mysql.storeResults() failed")
+				return
+			}
+			XCTAssert(results.numRows() == 10)
+			
+			var count = 0
+			results.forEachRow { a in
+				count += 1
+			}
+			XCTAssert(count == 10)
 		}
-        XCTAssert(count == 10)
-		
-		results.close()
 		
 		let qres2 = mysql.query(statement: "DROP TABLE test")
 		XCTAssert(qres2 == true, mysql.errorMessage())
@@ -204,22 +203,22 @@ class PerfectMySQLTests: XCTestCase {
         
         let sres2 = mysql.query(statement: "SELECT id,d,s FROM test")
         XCTAssert(sres2 == true, mysql.errorMessage())
-        
-        guard let results = mysql.storeResults() else {
-            XCTAssert(false, "mysql.storeResults() failed")
-            return
-        }
-        XCTAssert(results.numRows() == 1)
-        XCTAssert(results.numFields() == 3)
-        
-        results.forEachRow { row in
-            XCTAssert(row.count == 3)
-            XCTAssertEqual(row[0], "1")
-            XCTAssertNil(row[1])
-            XCTAssertEqual(row[2], "Row 1")
-        }
-        
-        results.close()
+		
+		do {
+			guard let results = mysql.storeResults() else {
+				XCTAssert(false, "mysql.storeResults() failed")
+				return
+			}
+			XCTAssert(results.numRows() == 1)
+			XCTAssert(results.numFields() == 3)
+			
+			results.forEachRow { row in
+				XCTAssert(row.count == 3)
+				XCTAssertEqual(row[0], "1")
+				XCTAssertNil(row[1])
+				XCTAssertEqual(row[2], "Row 1")
+			}
+		}
         
         let qres2 = mysql.query(statement: "DROP TABLE test")
         XCTAssert(qres2 == true, mysql.errorMessage())
@@ -235,7 +234,6 @@ class PerfectMySQLTests: XCTestCase {
 		XCTAssert(qres == true, mysql.errorMessage())
 		
 		let stmt1 = MySQLStmt(mysql)
-		defer { stmt1.close() }
 		let prepRes = stmt1.prepare(statement: "INSERT INTO all_data_types VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 		XCTAssert(prepRes, stmt1.errorMessage())
 		XCTAssert(stmt1.paramCount() == 28)
@@ -289,7 +287,6 @@ class PerfectMySQLTests: XCTestCase {
 		
 		for _ in 1...2 {
 			let stmt1 = MySQLStmt(mysql)
-            defer { stmt1.close() }
 			let prepRes = stmt1.prepare(statement: "INSERT INTO all_data_types VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 			XCTAssert(prepRes, stmt1.errorMessage())
 			XCTAssert(stmt1.paramCount() == 29)
@@ -333,7 +330,6 @@ class PerfectMySQLTests: XCTestCase {
 		
 		do {
 			let stmt1 = MySQLStmt(mysql)
-            defer { stmt1.close() }
 			
 			let prepRes = stmt1.prepare(statement: "SELECT * FROM all_data_types")
 			XCTAssert(prepRes, stmt1.errorMessage())
@@ -342,7 +338,6 @@ class PerfectMySQLTests: XCTestCase {
 			XCTAssert(execRes, stmt1.errorMessage())
 			
 			let results = stmt1.results()
-            defer { results.close() }
 			
 			let ok = results.forEachRow {
 				e in
@@ -399,7 +394,6 @@ class PerfectMySQLTests: XCTestCase {
 
         let results = mysql.storeResults()
         if let results = results {
-            defer { results.close() }
             while let row = results.next() {
                 XCTAssertEqual(row[0], "-1")
                 XCTAssertEqual(row[1], "1")
@@ -428,7 +422,6 @@ class PerfectMySQLTests: XCTestCase {
         
         let results = mysql.storeResults()
         if let results = results {
-            defer { results.close() }
             while let row = results.next() {
                 XCTAssertEqual(row[0], "-128")
                 XCTAssertEqual(row[1], "0")
@@ -457,7 +450,6 @@ class PerfectMySQLTests: XCTestCase {
         
         let results = mysql.storeResults()
         if let results = results {
-            defer { results.close() }
             while let row = results.next() {
                 XCTAssertEqual(row[0], "127")
                 XCTAssertEqual(row[1], "255")
@@ -486,7 +478,6 @@ class PerfectMySQLTests: XCTestCase {
         
         let results = mysql.storeResults()
         if let results = results {
-            defer { results.close() }
             while let row = results.next() {
                 XCTAssertEqual(row[0], "1.1")
                 XCTAssertEqual(row[1], "-1.1")
@@ -503,7 +494,6 @@ class PerfectMySQLTests: XCTestCase {
         XCTAssert(mysql.query(statement: "CREATE TABLE int_test (a TINYINT, au TINYINT UNSIGNED, b SMALLINT, bu SMALLINT UNSIGNED, c MEDIUMINT, cu MEDIUMINT UNSIGNED, d INT, du INT UNSIGNED, e BIGINT, eu BIGINT UNSIGNED)"), mysql.errorMessage())
         
         let stmt = MySQLStmt(mysql)
-        defer { stmt.close() }
         var res = stmt.prepare(statement: "INSERT INTO int_test (a, au, b, bu, c, cu, d, du, e, eu) VALUES "
             + "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         XCTAssert(res == true, stmt.errorMessage())
@@ -531,7 +521,6 @@ class PerfectMySQLTests: XCTestCase {
         
         let results = stmt.results()
 		XCTAssert(results.numRows == 1)
-        defer { results.close() }
         XCTAssert(results.forEachRow { row in
             XCTAssertEqual(row[0] as? Int8, -1)
             XCTAssertEqual(row[1] as? UInt8, 1)
@@ -551,7 +540,6 @@ class PerfectMySQLTests: XCTestCase {
         XCTAssert(mysql.query(statement: "CREATE TABLE int_test (a TINYINT, au TINYINT UNSIGNED, b SMALLINT, bu SMALLINT UNSIGNED, c MEDIUMINT, cu MEDIUMINT UNSIGNED, d INT, du INT UNSIGNED, e BIGINT, eu BIGINT UNSIGNED)"), mysql.errorMessage())
         
         let stmt = MySQLStmt(mysql)
-        defer { stmt.close() }
         var res = stmt.prepare(statement: "INSERT INTO int_test (a, au, b, bu, c, cu, d, du, e, eu) VALUES "
             + "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         XCTAssert(res == true, stmt.errorMessage())
@@ -578,7 +566,6 @@ class PerfectMySQLTests: XCTestCase {
         XCTAssert(res == true, stmt.errorMessage())
         
         let results = stmt.results()
-        defer { results.close() }
         XCTAssert(results.forEachRow { row in
             XCTAssertEqual(row[0] as? Int8, -128)
             XCTAssertEqual(row[1] as? UInt8, 0)
@@ -598,7 +585,6 @@ class PerfectMySQLTests: XCTestCase {
         XCTAssert(mysql.query(statement: "CREATE TABLE int_test (a TINYINT, au TINYINT UNSIGNED, b SMALLINT, bu SMALLINT UNSIGNED, c MEDIUMINT, cu MEDIUMINT UNSIGNED, d INT, du INT UNSIGNED, e BIGINT, eu BIGINT UNSIGNED)"), mysql.errorMessage())
         
         let stmt = MySQLStmt(mysql)
-        defer { stmt.close() }
         var res = stmt.prepare(statement: "INSERT INTO int_test (a, au, b, bu, c, cu, d, du, e, eu) VALUES "
             + "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         XCTAssert(res == true, stmt.errorMessage())
@@ -625,7 +611,6 @@ class PerfectMySQLTests: XCTestCase {
         XCTAssert(res == true, stmt.errorMessage())
         
         let results = stmt.results()
-        defer { results.close() }
         XCTAssert(results.forEachRow { row in
             XCTAssertEqual(row[0] as? Int8, 127)
             XCTAssertEqual(row[1] as? UInt8, 255)
@@ -645,7 +630,6 @@ class PerfectMySQLTests: XCTestCase {
         XCTAssert(mysql.query(statement: "CREATE TABLE decimal_test (f FLOAT, fm FLOAT, d DOUBLE, dm DOUBLE, de DECIMAL(2,1), dem DECIMAL(2,1))"), mysql.errorMessage())
         
         let stmt = MySQLStmt(mysql)
-        defer { stmt.close() }
         var res = stmt.prepare(statement: "INSERT INTO decimal_test (f, fm, d, dm, de, dem) VALUES "
             + "(?, ?, ?, ?, ?, ?)")
         XCTAssert(res == true, stmt.errorMessage())
@@ -668,7 +652,6 @@ class PerfectMySQLTests: XCTestCase {
         XCTAssert(res == true, stmt.errorMessage())
         
         let results = stmt.results()
-        defer { results.close() }
         XCTAssert(results.forEachRow { row in
             XCTAssertEqual(row[0] as? Float, 1.1)
             XCTAssertEqual(row[1] as? Float, -1.1)
@@ -684,7 +667,6 @@ class PerfectMySQLTests: XCTestCase {
         XCTAssert(mysql.query(statement: "CREATE TABLE null_test (a TINYINT, au TINYINT UNSIGNED, b SMALLINT, bu SMALLINT UNSIGNED, c MEDIUMINT, cu MEDIUMINT UNSIGNED, d INT, du INT UNSIGNED, e BIGINT, eu BIGINT UNSIGNED)"), mysql.errorMessage())
         
         let stmt = MySQLStmt(mysql)
-        defer { stmt.close() }
         var res = stmt.prepare(statement: "INSERT INTO null_test (a, au, b, bu, c, cu, d, du, e, eu) VALUES "
             + "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         XCTAssert(res == true, stmt.errorMessage())
@@ -712,7 +694,6 @@ class PerfectMySQLTests: XCTestCase {
         
         let results = stmt.results()
         XCTAssert(results.numRows == 1)
-        defer { results.close() }
         XCTAssert(results.forEachRow { row in
             XCTAssertNil(row[0])
             XCTAssertNil(row[1])
@@ -731,7 +712,6 @@ class PerfectMySQLTests: XCTestCase {
 		XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS testdb"), mysql.errorMessage())
 		XCTAssert(mysql.query(statement: "CREATE TABLE testdb (a VARCHAR( 20 ),\nb TINYINT,\nc TEXT,\nd DATE,\ne SMALLINT,\nf MEDIUMINT,\ng INT,\nh BIGINT,\ni BIGINT UNSIGNED,\nj FLOAT( 10, 2 ))"), mysql.errorMessage())
 		let stmt = MySQLStmt(mysql)
-		defer { stmt.close() }
 		_ = stmt.prepare(statement: "SELECT * FROM testdb WHERE 0=1")
 		for index in 0..<Int(stmt.fieldCount()) {
 			guard let _ = stmt.fieldInfo(index: index) else {
@@ -744,17 +724,8 @@ class PerfectMySQLTests: XCTestCase {
 }
 
 extension PerfectMySQLTests {
-  func testPing() {
-    XCTAssertTrue(mysql.ping())
-    mysql.close()
-    XCTAssertFalse(mysql.ping())
-  }
-}
-
-extension PerfectMySQLTests {
     static var allTests : [(String, (PerfectMySQLTests) -> () throws -> ())] {
         return [
-                   ("testPing", testPing),
                    ("testConnect", testConnect),
                    ("testListDbs1", testListDbs1),
                    ("testListDbs2", testListDbs2),

@@ -1,0 +1,401 @@
+//
+//  MySQLCRUD.swift
+//  PerfectMySQL
+//
+//  Created by Kyle Jessup on 2018-03-06.
+//
+
+import Foundation
+import PerfectCRUD
+
+public struct MySQLCRUDError: Error, CustomStringConvertible {
+	public let description: String
+	public init(_ msg: String) {
+		description = msg
+		CRUDLogging.log(.error, msg)
+	}
+}
+
+// maps column name to position which must be computed once before row reading action
+typealias MySQLCRUDColumnMap = [String:Int]
+
+class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
+	typealias Key = K
+	var codingPath: [CodingKey] = []
+	var allKeys: [Key] = []
+	let database: MySQL
+	let statement: MySQLStmt
+	let columns: MySQLCRUDColumnMap
+	let row: MySQLStmt.Results.Element
+	init(_ db: MySQL,
+		 stat: MySQLStmt,
+		 columns cols: MySQLCRUDColumnMap,
+		 row r: MySQLStmt.Results.Element) {
+		database = db
+		statement = stat
+		columns = cols
+		row = r
+	}
+	func column(_ key: Key) -> Any? {
+		guard let idx = columns[key.stringValue],
+			idx >= 0,
+			idx < row.count else {
+				return nil
+		}
+		return row[idx]
+	}
+	func contains(_ key: Key) -> Bool {
+		return nil != columns[key.stringValue]
+	}
+	func decodeNil(forKey key: Key) throws -> Bool {
+		return nil == column(key)
+	}
+	func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool {
+		return (column(key) as? Bool) ?? false
+	}
+	func decode(_ type: Int.Type, forKey key: Key) throws -> Int {
+		return (column(key) as? Int) ?? 0
+	}
+	func decode(_ type: Int8.Type, forKey key: Key) throws -> Int8 {
+		return (column(key) as? Int8) ?? 0
+	}
+	func decode(_ type: Int16.Type, forKey key: Key) throws -> Int16 {
+		return (column(key) as? Int16) ?? 0
+	}
+	func decode(_ type: Int32.Type, forKey key: Key) throws -> Int32 {
+		return (column(key) as? Int32) ?? 0
+	}
+	func decode(_ type: Int64.Type, forKey key: Key) throws -> Int64 {
+		return (column(key) as? Int64) ?? 0
+	}
+	func decode(_ type: UInt.Type, forKey key: Key) throws -> UInt {
+		return (column(key) as? UInt) ?? 0
+	}
+	func decode(_ type: UInt8.Type, forKey key: Key) throws -> UInt8 {
+		return (column(key) as? UInt8) ?? 0
+	}
+	func decode(_ type: UInt16.Type, forKey key: Key) throws -> UInt16 {
+		return (column(key) as? UInt16) ?? 0
+	}
+	func decode(_ type: UInt32.Type, forKey key: Key) throws -> UInt32 {
+		return (column(key) as? UInt32) ?? 0
+	}
+	func decode(_ type: UInt64.Type, forKey key: Key) throws -> UInt64 {
+		return (column(key) as? UInt64) ?? 0
+	}
+	func decode(_ type: Float.Type, forKey key: Key) throws -> Float {
+		return (column(key) as? Float) ?? 0
+	}
+	func decode(_ type: Double.Type, forKey key: Key) throws -> Double {
+		return (column(key) as? Double) ?? 0
+	}
+	func decode(_ type: String.Type, forKey key: Key) throws -> String {
+		return (column(key) as? String) ?? ""
+	}
+	func decode<T>(_ type: T.Type, forKey key: Key) throws -> T where T : Decodable {
+		guard let special = SpecialType(type) else {
+			throw CRUDDecoderError("Unsupported type: \(type) for key: \(key.stringValue)")
+		}
+		let val = column(key)
+		switch special {
+		case .uint8Array:
+			let ret: [UInt8] = (val as? [UInt8]) ?? []
+			return ret as! T
+		case .int8Array:
+			let ret: [Int8] = ((val as? [UInt8]) ?? []).map { Int8($0) }
+			return ret as! T
+		case .data:
+			let bytes: [UInt8] = (val as? [UInt8]) ?? []
+			return Data(bytes: bytes) as! T
+		case .uuid:
+			guard let str = val as? String, let uuid = UUID(uuidString: str) else {
+				throw CRUDDecoderError("Invalid UUID string \(String(describing: val)).")
+			}
+			return uuid as! T
+		case .date:
+			guard let str = val as? String, let date = Date(fromISO8601: str) else {
+				throw CRUDDecoderError("Invalid Date string \(String(describing: val)).")
+			}
+			return date as! T
+		case .codable:
+			guard let data = (val as? String)?.data(using: .utf8) else {
+				throw CRUDDecoderError("Unsupported type: \(type) for key: \(key.stringValue)")
+			}
+			return try JSONDecoder().decode(type, from: data)
+		}
+	}
+	func nestedContainer<NestedKey>(keyedBy type: NestedKey.Type, forKey key: Key) throws -> KeyedDecodingContainer<NestedKey> where NestedKey : CodingKey {
+		throw CRUDDecoderError("Unimplimented nestedContainer")
+	}
+	func nestedUnkeyedContainer(forKey key: Key) throws -> UnkeyedDecodingContainer {
+		throw CRUDDecoderError("Unimplimented nestedUnkeyedContainer")
+	}
+	func superDecoder() throws -> Decoder {
+		throw CRUDDecoderError("Unimplimented superDecoder")
+	}
+	func superDecoder(forKey key: Key) throws -> Decoder {
+		throw CRUDDecoderError("Unimplimented superDecoder")
+	}
+}
+
+struct MySQLColumnInfo: Codable {
+	let column_name: String
+	let data_type: String
+}
+
+class MySQLGenDelegate: SQLGenDelegate {
+	let database: MySQL
+	var parentTableStack: [TableStructure] = []
+	var bindings: Bindings = []
+	
+	init(connection db: MySQL) {
+		database = db
+	}
+	
+	func getBinding(for expr: Expression) throws -> String {
+		bindings.append(("?", expr))
+		return "?"
+	}
+	
+	func quote(identifier: String) throws -> String {
+		return "`\(identifier)`"
+	}
+	
+	func getCreateTableSQL(forTable: TableStructure, policy: TableCreatePolicy) throws -> [String] {
+		parentTableStack.append(forTable)
+		defer {
+			parentTableStack.removeLast()
+		}
+		var sub: [String]
+		if !policy.contains(.shallow) {
+			sub = try forTable.subTables.flatMap { try getCreateTableSQL(forTable: $0, policy: policy) }
+		} else {
+			sub = []
+		}
+		if policy.contains(.dropTable) {
+			sub += ["DROP TABLE IF EXISTS \(try quote(identifier: forTable.tableName))"]
+		}
+		if !policy.contains(.dropTable),
+			policy.contains(.reconcileTable),
+			let existingColumns = getExistingColumnData(forTable: forTable.tableName) {
+			let existingColumnMap: [String:MySQLColumnInfo] = .init(uniqueKeysWithValues: existingColumns.map { ($0.column_name, $0) })
+			let newColumnMap: [String:TableStructure.Column] = .init(uniqueKeysWithValues: forTable.columns.map { ($0.name.lowercased(), $0) })
+			
+			let addColumns = newColumnMap.keys.filter { existingColumnMap[$0] == nil }
+			let removeColumns: [String] = existingColumnMap.keys.filter { newColumnMap[$0] == nil }
+			
+			sub += try removeColumns.map {
+				return """
+				ALTER TABLE \(try quote(identifier: forTable.tableName)) DROP COLUMN \(try quote(identifier: $0))
+				"""
+			}
+			sub += try addColumns.flatMap { newColumnMap[$0] }.map {
+				let nameType = try getColumnDefinition($0)
+				return """
+				ALTER TABLE \(try quote(identifier: forTable.tableName)) ADD COLUMN \(nameType)
+				"""
+			}
+			return sub
+		} else {
+			sub += [
+				"""
+				CREATE TABLE IF NOT EXISTS \(try quote(identifier: forTable.tableName)) (
+				\(try forTable.columns.map { try getColumnDefinition($0) }.joined(separator: ",\n\t"))
+				)
+				"""]
+		}
+		return sub
+	}
+	
+	func getCreateIndexSQL(forTable name: String, on columns: [String], unique: Bool) throws -> [String] {
+		let stat =
+		"""
+		CREATE \(unique ? "UNIQUE " : "")INDEX IF NOT EXISTS \(try quote(identifier: "index_\(columns.joined(separator: "_"))"))
+		ON \(try quote(identifier: name)) (\(try columns.map{try quote(identifier: $0)}.joined(separator: ",")))
+		"""
+		return [stat]
+	}
+	func getExistingColumnData(forTable: String) -> [MySQLColumnInfo]? {
+		do {
+			let statement = "SHOW COLUMNS FROM \(try quote(identifier: forTable))"
+			let stat = MySQLStmt(database)
+			guard stat.prepare(statement: statement) else {
+				return nil
+			}
+			let exeDelegate = MySQLExeDelegate(connection: database, stat: stat)
+			var ret: [MySQLColumnInfo] = []
+			while try exeDelegate.hasNext() {
+				let rowDecoder: CRUDRowDecoder<ColumnKey> = CRUDRowDecoder(delegate: exeDelegate)
+				ret.append(try MySQLColumnInfo(from: rowDecoder))
+			}
+			guard !ret.isEmpty else {
+				return nil
+			}
+			return ret
+		} catch {
+			return nil
+		}
+	}
+	func getColumnDefinition(_ column: TableStructure.Column) throws -> String {
+		let name = column.name
+		let type = column.type
+		let typeName: String
+		switch type {
+		case is Int.Type:
+			typeName = "bigint"
+		case is Int8.Type:
+			typeName = "tinyint"
+		case is Int16.Type:
+			typeName = "smallint"
+		case is Int32.Type:
+			typeName = "int"
+		case is Int64.Type:
+			typeName = "bigint"
+		case is UInt.Type:
+			typeName = "bigint"
+		case is UInt8.Type:
+			typeName = "tinyint"
+		case is UInt16.Type:
+			typeName = "smallint"
+		case is UInt32.Type:
+			typeName = "int"
+		case is UInt64.Type:
+			typeName = "bigint"
+		case is Double.Type:
+			typeName = "double"
+		case is Float.Type:
+			typeName = "float"
+		case is Bool.Type:
+			typeName = "tinyint"
+		case is String.Type:
+			typeName = "longtext"
+		default:
+			guard let special = SpecialType(type) else {
+				throw MySQLCRUDError("Unsupported SQL column type \(type)")
+			}
+			switch special {
+			case .uint8Array:
+				typeName = "longblob"
+			case .int8Array:
+				typeName = "longblob"
+			case .data:
+				typeName = "longblob"
+			case .uuid:
+				typeName = "varchar(36)"
+			case .date:
+				typeName = "datetime"
+			case .codable:
+				typeName = "json"
+			}
+		}
+		let addendum: String
+		if column.properties.contains(.primaryKey) {
+			addendum = " PRIMARY KEY"
+		} else if !column.optional {
+			addendum = " NOT NULL"
+		} else {
+			addendum = ""
+		}
+		return "\(try quote(identifier: name)) \(typeName)\(addendum)"
+	}
+}
+
+typealias MySQLColumnMap = [String:Int]
+
+class MySQLExeDelegate: SQLExeDelegate {
+	let connection: MySQL
+	let statement: MySQLStmt
+	let results: MySQLStmt.Results
+	let columnMap: MySQLColumnMap
+	init(connection c: MySQL, stat: MySQLStmt) {
+		connection = c
+		statement = stat
+		results = stat.results()
+		var m = MySQLColumnMap()
+		let inv = stat.fieldNames()
+		inv.forEach {
+			let (pos, name) = $0
+			m[name] = pos
+		}
+		columnMap = m
+	}
+	
+	func bind(_ bindings: Bindings, skip: Int) throws {
+		statement.reset()
+		var i = skip + 1
+		try bindings[skip...].forEach {
+			let (_, expr) = $0
+			try bindOne(expr: expr)
+			i += 1
+		}
+	}
+	
+	func hasNext() throws -> Bool {
+		return results.fetchRow()
+	}
+	
+	func next<A>() throws -> KeyedDecodingContainer<A>? where A : CodingKey {
+		guard let row = results.currentRow() else {
+			return nil
+		}
+		return KeyedDecodingContainer(MySQLCRUDRowReader<A>(connection,
+															stat: statement,
+															columns: columnMap,
+															row: row))
+	}
+	
+	private func bindOne(expr: CRUDExpression) throws {
+		switch expr {
+		case .lazy(let e):
+			try bindOne(expr: e())
+		case .integer(let i):
+			statement.bindParam(i)
+		case .decimal(let d):
+			statement.bindParam(d)
+		case .string(let s):
+			statement.bindParam(s)
+		case .blob(let b):
+			statement.bindParam(b)
+		case .bool(let b):
+			statement.bindParam(b ? 1 : 0)
+		case .date(let d):
+			statement.bindParam(d.iso8601())
+		case .uuid(let u):
+			statement.bindParam(u.uuidString)
+		case .null:
+			statement.bindParam()
+		case .column(_), .and(_, _), .or(_, _),
+			 .equality(_, _), .inequality(_, _),
+			 .not(_), .lessThan(_, _), .lessThanEqual(_, _),
+			 .greaterThan(_, _), .greaterThanEqual(_, _),
+			 .keyPath(_), .in(_, _), .like(_, _, _, _):
+			throw MySQLCRUDError("Asked to bind unsupported expression type: \(expr)")
+		}
+	}
+}
+
+public struct MySQLDatabaseConfiguration: DatabaseConfigurationProtocol {
+	let connection: MySQL
+	public init(database: String, host: String, port: Int? = nil, username: String? = nil, password: String? = nil) throws {
+		connection = MySQL()
+		guard connection.connect(host: host, user: username, password: password, db: database, port: UInt32(port ?? 0), socket: nil, flag: 0) else {
+			throw MySQLCRUDError("Could not connect. \(connection.errorMessage())")
+		}
+	}
+	public var sqlGenDelegate: SQLGenDelegate {
+		return MySQLGenDelegate(connection: connection)
+	}
+	
+	public func sqlExeDelegate(forSQL: String) throws -> SQLExeDelegate {
+		let stat = MySQLStmt(connection)
+		guard stat.prepare(statement: forSQL) else {
+			throw MySQLCRUDError("Could not prepare statement. \(stat.errorMessage())")
+		}
+		return MySQLExeDelegate(connection: connection, stat: stat)
+	}
+}
+
+
+
+
+
