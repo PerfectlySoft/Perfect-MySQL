@@ -54,7 +54,15 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 		return (column(key) as? Bool) ?? false
 	}
 	func decode(_ type: Int.Type, forKey key: Key) throws -> Int {
-		return (column(key) as? Int) ?? 0
+		let a = column(key)
+		switch a {
+		case let i as Int64:
+			return Int(i)
+		case let i as Int:
+			return i
+		default:
+			throw MySQLCRUDError("Could not convert \(String(describing: a)) into an Int.")
+		}
 	}
 	func decode(_ type: Int8.Type, forKey key: Key) throws -> Int8 {
 		return (column(key) as? Int8) ?? 0
@@ -113,7 +121,7 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 			}
 			return uuid as! T
 		case .date:
-			guard let str = val as? String, let date = Date(fromISO8601: str) else {
+			guard let str = val as? String, let date = Date(fromMysqlFormatted: str) else {
 				throw CRUDDecoderError("Invalid Date string \(String(describing: val)).")
 			}
 			return date as! T
@@ -139,8 +147,20 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 }
 
 struct MySQLColumnInfo: Codable {
-	let column_name: String
-	let data_type: String
+	enum CodingKeys: String, CodingKey {
+		case field = "Field", type = "Type", null = "Null", key = "Key"
+	}
+	let field: String
+	let type: String
+	private let null: String
+	private let key: String
+	
+	var isNull: Bool {
+		return null == "YES"
+	}
+	var isPrimaryKey: Bool {
+		return key == "PRI"
+	}
 }
 
 class MySQLGenDelegate: SQLGenDelegate {
@@ -178,7 +198,7 @@ class MySQLGenDelegate: SQLGenDelegate {
 		if !policy.contains(.dropTable),
 			policy.contains(.reconcileTable),
 			let existingColumns = getExistingColumnData(forTable: forTable.tableName) {
-			let existingColumnMap: [String:MySQLColumnInfo] = .init(uniqueKeysWithValues: existingColumns.map { ($0.column_name, $0) })
+			let existingColumnMap: [String:MySQLColumnInfo] = .init(uniqueKeysWithValues: existingColumns.map { ($0.field, $0) })
 			let newColumnMap: [String:TableStructure.Column] = .init(uniqueKeysWithValues: forTable.columns.map { ($0.name.lowercased(), $0) })
 			
 			let addColumns = newColumnMap.keys.filter { existingColumnMap[$0] == nil }
@@ -210,11 +230,12 @@ class MySQLGenDelegate: SQLGenDelegate {
 	func getCreateIndexSQL(forTable name: String, on columns: [String], unique: Bool) throws -> [String] {
 		let stat =
 		"""
-		CREATE \(unique ? "UNIQUE " : "")INDEX IF NOT EXISTS \(try quote(identifier: "index_\(columns.joined(separator: "_"))"))
+		CREATE \(unique ? "UNIQUE " : "")INDEX \(try quote(identifier: "index_\(columns.joined(separator: "_"))"))
 		ON \(try quote(identifier: name)) (\(try columns.map{try quote(identifier: $0)}.joined(separator: ",")))
 		"""
 		return [stat]
 	}
+	
 	func getExistingColumnData(forTable: String) -> [MySQLColumnInfo]? {
 		do {
 			let statement = "SHOW COLUMNS FROM \(try quote(identifier: forTable))"
@@ -222,11 +243,12 @@ class MySQLGenDelegate: SQLGenDelegate {
 			guard stat.prepare(statement: statement) else {
 				return nil
 			}
-			let exeDelegate = MySQLExeDelegate(connection: database, stat: stat)
+			let exeDelegate = MySQLStmtExeDelegate(connection: database, stat: stat)
 			var ret: [MySQLColumnInfo] = []
 			while try exeDelegate.hasNext() {
 				let rowDecoder: CRUDRowDecoder<ColumnKey> = CRUDRowDecoder(delegate: exeDelegate)
-				ret.append(try MySQLColumnInfo(from: rowDecoder))
+				let columnInfo = try MySQLColumnInfo(from: rowDecoder)
+				ret.append(columnInfo)
 			}
 			guard !ret.isEmpty else {
 				return nil
@@ -236,6 +258,7 @@ class MySQLGenDelegate: SQLGenDelegate {
 			return nil
 		}
 	}
+	
 	func getColumnDefinition(_ column: TableStructure.Column) throws -> String {
 		let name = column.name
 		let type = column.type
@@ -302,15 +325,33 @@ class MySQLGenDelegate: SQLGenDelegate {
 
 typealias MySQLColumnMap = [String:Int]
 
-class MySQLExeDelegate: SQLExeDelegate {
+struct MySQLDirectExeDelegate: SQLExeDelegate {
+	let connection: MySQL
+	let sql: String
+	func bind(_ bindings: Bindings, skip: Int) throws {
+		guard bindings.isEmpty else {
+			throw MySQLCRUDError("Binds are not permitted for this type of statement.")
+		}
+	}
+	func hasNext() throws -> Bool {
+		guard connection.query(statement: sql) else {
+			throw MySQLCRUDError("Error executing statement. \(connection.errorMessage())")
+		}
+		return false
+	}
+	func next<A>() throws -> KeyedDecodingContainer<A>? where A : CodingKey {
+		return nil
+	}
+}
+
+class MySQLStmtExeDelegate: SQLExeDelegate {
 	let connection: MySQL
 	let statement: MySQLStmt
-	let results: MySQLStmt.Results
+	var results: MySQLStmt.Results?
 	let columnMap: MySQLColumnMap
 	init(connection c: MySQL, stat: MySQLStmt) {
 		connection = c
 		statement = stat
-		results = stat.results()
 		var m = MySQLColumnMap()
 		let inv = stat.fieldNames()
 		inv.forEach {
@@ -321,21 +362,29 @@ class MySQLExeDelegate: SQLExeDelegate {
 	}
 	
 	func bind(_ bindings: Bindings, skip: Int) throws {
-		statement.reset()
-		var i = skip + 1
 		try bindings[skip...].forEach {
 			let (_, expr) = $0
 			try bindOne(expr: expr)
-			i += 1
 		}
 	}
 	
 	func hasNext() throws -> Bool {
-		return results.fetchRow()
+		if nil == results {
+			guard statement.execute() else {
+				throw MySQLCRUDError("Error executing statement. \(statement.errorMessage())")
+			}
+			results = statement.results()
+		}
+		if results?.fetchRow() ?? false {
+			return true
+		}
+		statement.reset()
+		results = nil
+		return false
 	}
 	
 	func next<A>() throws -> KeyedDecodingContainer<A>? where A : CodingKey {
-		guard let row = results.currentRow() else {
+		guard let row = results?.currentRow() else {
 			return nil
 		}
 		return KeyedDecodingContainer(MySQLCRUDRowReader<A>(connection,
@@ -359,7 +408,7 @@ class MySQLExeDelegate: SQLExeDelegate {
 		case .bool(let b):
 			statement.bindParam(b ? 1 : 0)
 		case .date(let d):
-			statement.bindParam(d.iso8601())
+			statement.bindParam(d.mysqlFormatted())
 		case .uuid(let u):
 			statement.bindParam(u.uuidString)
 		case .null:
@@ -376,26 +425,59 @@ class MySQLExeDelegate: SQLExeDelegate {
 
 public struct MySQLDatabaseConfiguration: DatabaseConfigurationProtocol {
 	let connection: MySQL
-	public init(database: String, host: String, port: Int? = nil, username: String? = nil, password: String? = nil) throws {
+	public init(database: String,
+				host: String,
+				port: Int? = nil,
+				username: String? = nil,
+				password: String? = nil) throws {
 		connection = MySQL()
+		_ = connection.setOption(.MYSQL_SET_CHARSET_NAME, "utf8mb4")
 		guard connection.connect(host: host, user: username, password: password, db: database, port: UInt32(port ?? 0), socket: nil, flag: 0) else {
 			throw MySQLCRUDError("Could not connect. \(connection.errorMessage())")
 		}
+	}
+	public init(connection c: MySQL) {
+		connection = c
 	}
 	public var sqlGenDelegate: SQLGenDelegate {
 		return MySQLGenDelegate(connection: connection)
 	}
 	
 	public func sqlExeDelegate(forSQL: String) throws -> SQLExeDelegate {
+		let noPrepCommands = ["CREATE", "DROP", "ALTER", "BEGIN", "COMMIT", "ROLLBACK"]
+		if nil != noPrepCommands.first(where: { forSQL.hasPrefix($0) }) {
+			return MySQLDirectExeDelegate(connection: connection, sql: forSQL)
+		}
 		let stat = MySQLStmt(connection)
 		guard stat.prepare(statement: forSQL) else {
 			throw MySQLCRUDError("Could not prepare statement. \(stat.errorMessage())")
 		}
-		return MySQLExeDelegate(connection: connection, stat: stat)
+		return MySQLStmtExeDelegate(connection: connection, stat: stat)
 	}
 }
 
-
+extension Date {
+	func mysqlFormatted() -> String {
+		let dateFormatter = DateFormatter()
+		dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+		dateFormatter.timeZone = TimeZone(abbreviation: "GMT")
+		dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+		let ret = dateFormatter.string(from: self)
+		return ret
+	}
+	
+	init?(fromMysqlFormatted string: String) {
+		let dateFormatter = DateFormatter()
+		dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+		dateFormatter.timeZone = TimeZone.current
+		dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+		if let d = dateFormatter.date(from: string) {
+			self = d
+			return
+		}
+		return nil
+	}
+}
 
 
 

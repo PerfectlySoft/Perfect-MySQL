@@ -69,28 +69,10 @@ public final class MySQL {
 	
 	/// Connects to a MySQL server
 	public func connect(host: String? = nil, user: String? = nil, password: String? = nil, db: String? = nil, port: UInt32 = 0, socket: String? = nil, flag: UInt = 0) -> Bool {
-		//		let hostOrBlank = MySQL.convertString(hst)
-		//		let userOrBlank = MySQL.convertString(user)
-		//		let passwordOrBlank = MySQL.convertString(password)
-		//		let dbOrBlank = MySQL.convertString(db)
-		//		let socketOrBlank = MySQL.convertString(socket)
-		//
-		//		defer {
-		//			self.cleanConvertedString(hostOrBlank)
-		//			self.cleanConvertedString(userOrBlank)
-		//			self.cleanConvertedString(passwordOrBlank)
-		//			self.cleanConvertedString(dbOrBlank)
-		//			self.cleanConvertedString(socketOrBlank)
-		//		}
-		
 		let check = mysql_real_connect(mysqlPtr,
-									   host,
-									   user,
-									   password,
-									   db,
-									   port,
-									   socket,
-									   flag)
+									   host, user, password,
+									   db, port,
+									   socket, flag)
 		return check != nil && check == mysqlPtr
 	}
 	

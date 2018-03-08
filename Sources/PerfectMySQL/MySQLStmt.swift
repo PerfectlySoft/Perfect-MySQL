@@ -15,14 +15,30 @@ import mysqlclient
 /// handles mysql prepared statements
 public final class MySQLStmt {
 	private let ptr: UnsafeMutablePointer<MYSQL_STMT>
-	private var paramBinds = UnsafeMutablePointer<MYSQL_BIND>(nil as OpaquePointer?)
+	private var paramBinds: UnsafeMutablePointer<MYSQL_BIND>?
 	private var paramBindsOffset = 0
 	var meta: UnsafeMutablePointer<MYSQL_RES>?
 	
+	/// initialize mysql statement structure
+	public init(_ mysql: MySQL) {
+		ptr = mysql_stmt_init(mysql.mysqlPtr)
+	}
+	
+	deinit {
+		clearBinds()
+		if let meta = self.meta {
+			mysql_free_result(meta)
+		}
+		mysql_stmt_close(ptr)
+	}
+	
 	public func fieldNames() -> [Int: String] {
+		let columnCount = Int(fieldCount())
+		guard columnCount > 0 else {
+			return [:]
+		}
 		var fieldDictionary = [Int: String]()
 		let fields = mysql_fetch_fields(mysql_stmt_result_metadata(ptr))
-		let columnCount = Int(self.fieldCount())
 		var i = 0
 		while i != columnCount {
 			fieldDictionary[i] = String(cString: fields![i].name)
@@ -84,8 +100,7 @@ public final class MySQLStmt {
 			 MYSQL_TYPE_MEDIUM_BLOB,
 			 MYSQL_TYPE_LONG_BLOB,
 			 MYSQL_TYPE_BLOB:
-			if ( (field.pointee.flags & UInt32(BINARY_FLAG)) != 0)
-			{
+			if (field.pointee.flags & UInt32(BINARY_FLAG)) != 0 {
 				return .bytes
 			}
 			fallthrough
@@ -99,30 +114,16 @@ public final class MySQLStmt {
 		case OK, Error, NoData, DataTruncated
 	}
 	
-	/// initialize mysql statement structure
-	public init(_ mysql: MySQL) {
-		ptr = mysql_stmt_init(mysql.mysqlPtr)
-	}
-	
-	deinit {
-		clearBinds()
-		if let meta = self.meta {
-			mysql_free_result(meta)
-		}
-		mysql_stmt_close(ptr)
-	}
-	
 	@available(*, deprecated)
 	public func close() {}
 	
-	
 	/// Resets the statement buffers in the server
 	public func reset() {
-		clearBinds()
 		mysql_stmt_reset(ptr)
+		resetBinds()
 	}
 	
-	func clearBinds() {
+	public func resetBinds() {
 		let count = paramBindsOffset
 		if let paramBinds = self.paramBinds, count > 0 {
 			for i in 0..<count {
@@ -149,11 +150,19 @@ public final class MySQLStmt {
 				if bind.length != nil {
 					bind.length.deallocate(capacity: 1)
 				}
+				paramBinds[i] = MYSQL_BIND()
 			}
-			paramBinds.deinitialize(count: count)
-			paramBinds.deallocate(capacity: count)
-			self.paramBinds = nil
-			self.paramBindsOffset = 0
+			paramBindsOffset = 0
+		}
+	}
+	
+	public func clearBinds() {
+		let count = paramBindsOffset
+		if count > 0, nil != paramBinds {
+			resetBinds()
+			paramBinds?.deallocate(capacity: count)
+			paramBinds = nil
+			paramBindsOffset = 0
 		}
 	}
 	
@@ -179,10 +188,10 @@ public final class MySQLStmt {
 		guard r == 0 else {
 			return false
 		}
-		if let meta = self.meta {
-			mysql_free_result(meta)
+		if let m = meta {
+			mysql_free_result(m)
 		}
-		self.meta = mysql_stmt_result_metadata(ptr)
+		meta = mysql_stmt_result_metadata(ptr)
 		let count = paramCount()
 		if count > 0 {
 			paramBinds = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: count)
@@ -197,11 +206,9 @@ public final class MySQLStmt {
 	/// Executes a prepared statement, binding parameters if needed
 	public func execute() -> Bool {
 		if paramBindsOffset > 0 {
-			guard let paramBinds = self.paramBinds else {
-				return false
-			}
-			guard 0 == mysql_stmt_bind_param(ptr, paramBinds) else {
-				return false
+			guard let paramBinds = self.paramBinds,
+				0 == mysql_stmt_bind_param(ptr, paramBinds) else {
+					return false
 			}
 		}
 		let r = mysql_stmt_execute(ptr)
@@ -422,110 +429,6 @@ public final class MySQLStmt {
 			return currentRow()
 		}
 		
-		private func bind() {
-			let scratch = UnsafeMutableRawPointer(UnsafeMutablePointer<Int8>.allocate(capacity: 0))
-			for i in 0..<numFields {
-				guard let field = mysql_fetch_field_direct(meta, UInt32(i)) else {
-					continue
-				}
-				let f: MYSQL_FIELD = field.pointee
-				var bind = bindField(field)
-				bind.length = lengthBuffers.advanced(by: i)
-				bind.length.initialize(to: 0)
-				bind.is_null = isNullBuffers.advanced(by: i)
-				bind.is_null.initialize(to: 0)
-				
-				let genType = mysqlTypeToGeneralType(field)
-				switch genType {
-				case .double:
-					switch bind.buffer_type {
-					case MYSQL_TYPE_FLOAT:
-						bind = bindBuffer(bind, type: Float.self);
-					case MYSQL_TYPE_DOUBLE:
-						bind = bindBuffer(bind, type: Double.self);
-					default: break
-					}
-				case .integer:
-					if (f.flags & _UNSIGNED_FLAG) == _UNSIGNED_FLAG {
-						bind.is_unsigned = 1
-						switch bind.buffer_type {
-						case MYSQL_TYPE_LONGLONG:
-							bind = bindBuffer(bind, type: UInt64.self);
-						case MYSQL_TYPE_LONG, MYSQL_TYPE_INT24:
-							bind = bindBuffer(bind, type: UInt32.self);
-						case MYSQL_TYPE_SHORT:
-							bind = bindBuffer(bind, type: UInt16.self);
-						case MYSQL_TYPE_TINY:
-							bind = bindBuffer(bind, type: UInt8.self);
-						default: break
-						}
-					} else {
-						switch bind.buffer_type {
-						case MYSQL_TYPE_LONGLONG:
-							bind = bindBuffer(bind, type: Int64.self);
-						case MYSQL_TYPE_LONG, MYSQL_TYPE_INT24:
-							bind = bindBuffer(bind, type: Int32.self);
-						case MYSQL_TYPE_SHORT:
-							bind = bindBuffer(bind, type: Int16.self);
-						case MYSQL_TYPE_TINY:
-							bind = bindBuffer(bind, type: Int8.self);
-						default: break
-						}
-					}
-				case .bytes, .string, .date, .null:
-					bind.buffer = scratch
-					bind.buffer_length = 0
-				}
-				binds.advanced(by: i).initialize(to: bind)
-			}
-			mysql_stmt_bind_result(stmt.ptr, binds)
-		}
-		
-		private func unbind() {
-			for i in 0..<numFields {
-				let bind = binds[i]
-				let genType = mysqlTypeToGeneralType(bind.buffer_type)
-				switch genType {
-				case .double:
-					switch bind.buffer_type {
-					case MYSQL_TYPE_FLOAT:
-						bind.buffer.assumingMemoryBound(to: Float.self).deallocate(capacity: 1)
-					case MYSQL_TYPE_DOUBLE:
-						bind.buffer.assumingMemoryBound(to: Double.self).deallocate(capacity: 1)
-					default: break
-					}
-				case .integer:
-					if bind.is_unsigned == 1 {
-						switch bind.buffer_type {
-						case MYSQL_TYPE_LONGLONG:
-							bind.buffer.assumingMemoryBound(to: UInt64.self).deallocate(capacity: 1)
-						case MYSQL_TYPE_LONG, MYSQL_TYPE_INT24:
-							bind.buffer.assumingMemoryBound(to: UInt32.self).deallocate(capacity: 1)
-						case MYSQL_TYPE_SHORT:
-							bind.buffer.assumingMemoryBound(to: UInt16.self).deallocate(capacity: 1)
-						case MYSQL_TYPE_TINY:
-							bind.buffer.assumingMemoryBound(to: UInt8.self).deallocate(capacity: 1)
-						default: break
-						}
-					} else {
-						switch bind.buffer_type {
-						case MYSQL_TYPE_LONGLONG:
-							bind.buffer.assumingMemoryBound(to: Int64.self).deallocate(capacity: 1)
-						case MYSQL_TYPE_LONG, MYSQL_TYPE_INT24:
-							bind.buffer.assumingMemoryBound(to: Int32.self).deallocate(capacity: 1)
-						case MYSQL_TYPE_SHORT:
-							bind.buffer.assumingMemoryBound(to: Int16.self).deallocate(capacity: 1)
-						case MYSQL_TYPE_TINY:
-							bind.buffer.assumingMemoryBound(to: Int8.self).deallocate(capacity: 1)
-						default: break
-						}
-					}
-				case .bytes, .string, .date, .null:
-					() // do nothing. these were cleaned right after use or not allocated at all
-				}
-			}
-		}
-		
 		enum GeneralType {
 			case integer(enum_field_types),
 			double(enum_field_types),
@@ -736,6 +639,110 @@ public final class MySQLStmt {
 			var bind = MYSQL_BIND()
 			bind.buffer_type = type
 			return bind
+		}
+		
+		private func bind() {
+			let scratch = UnsafeMutableRawPointer(UnsafeMutablePointer<Int8>.allocate(capacity: 0))
+			for i in 0..<numFields {
+				guard let field = mysql_fetch_field_direct(meta, UInt32(i)) else {
+					continue
+				}
+				let f: MYSQL_FIELD = field.pointee
+				var bind = bindField(field)
+				bind.length = lengthBuffers.advanced(by: i)
+				bind.length.initialize(to: 0)
+				bind.is_null = isNullBuffers.advanced(by: i)
+				bind.is_null.initialize(to: 0)
+				
+				let genType = mysqlTypeToGeneralType(field)
+				switch genType {
+				case .double:
+					switch bind.buffer_type {
+					case MYSQL_TYPE_FLOAT:
+						bind = bindBuffer(bind, type: Float.self);
+					case MYSQL_TYPE_DOUBLE:
+						bind = bindBuffer(bind, type: Double.self);
+					default: break
+					}
+				case .integer:
+					if (f.flags & _UNSIGNED_FLAG) == _UNSIGNED_FLAG {
+						bind.is_unsigned = 1
+						switch bind.buffer_type {
+						case MYSQL_TYPE_LONGLONG:
+							bind = bindBuffer(bind, type: UInt64.self);
+						case MYSQL_TYPE_LONG, MYSQL_TYPE_INT24:
+							bind = bindBuffer(bind, type: UInt32.self);
+						case MYSQL_TYPE_SHORT:
+							bind = bindBuffer(bind, type: UInt16.self);
+						case MYSQL_TYPE_TINY:
+							bind = bindBuffer(bind, type: UInt8.self);
+						default: break
+						}
+					} else {
+						switch bind.buffer_type {
+						case MYSQL_TYPE_LONGLONG:
+							bind = bindBuffer(bind, type: Int64.self);
+						case MYSQL_TYPE_LONG, MYSQL_TYPE_INT24:
+							bind = bindBuffer(bind, type: Int32.self);
+						case MYSQL_TYPE_SHORT:
+							bind = bindBuffer(bind, type: Int16.self);
+						case MYSQL_TYPE_TINY:
+							bind = bindBuffer(bind, type: Int8.self);
+						default: break
+						}
+					}
+				case .bytes, .string, .date, .null:
+					bind.buffer = scratch
+					bind.buffer_length = 0
+				}
+				binds.advanced(by: i).initialize(to: bind)
+			}
+			mysql_stmt_bind_result(stmt.ptr, binds)
+		}
+		
+		private func unbind() {
+			for i in 0..<numFields {
+				let bind = binds[i]
+				let genType = mysqlTypeToGeneralType(bind.buffer_type)
+				switch genType {
+				case .double:
+					switch bind.buffer_type {
+					case MYSQL_TYPE_FLOAT:
+						bind.buffer.assumingMemoryBound(to: Float.self).deallocate(capacity: 1)
+					case MYSQL_TYPE_DOUBLE:
+						bind.buffer.assumingMemoryBound(to: Double.self).deallocate(capacity: 1)
+					default: break
+					}
+				case .integer:
+					if bind.is_unsigned == 1 {
+						switch bind.buffer_type {
+						case MYSQL_TYPE_LONGLONG:
+							bind.buffer.assumingMemoryBound(to: UInt64.self).deallocate(capacity: 1)
+						case MYSQL_TYPE_LONG, MYSQL_TYPE_INT24:
+							bind.buffer.assumingMemoryBound(to: UInt32.self).deallocate(capacity: 1)
+						case MYSQL_TYPE_SHORT:
+							bind.buffer.assumingMemoryBound(to: UInt16.self).deallocate(capacity: 1)
+						case MYSQL_TYPE_TINY:
+							bind.buffer.assumingMemoryBound(to: UInt8.self).deallocate(capacity: 1)
+						default: break
+						}
+					} else {
+						switch bind.buffer_type {
+						case MYSQL_TYPE_LONGLONG:
+							bind.buffer.assumingMemoryBound(to: Int64.self).deallocate(capacity: 1)
+						case MYSQL_TYPE_LONG, MYSQL_TYPE_INT24:
+							bind.buffer.assumingMemoryBound(to: Int32.self).deallocate(capacity: 1)
+						case MYSQL_TYPE_SHORT:
+							bind.buffer.assumingMemoryBound(to: Int16.self).deallocate(capacity: 1)
+						case MYSQL_TYPE_TINY:
+							bind.buffer.assumingMemoryBound(to: Int8.self).deallocate(capacity: 1)
+						default: break
+						}
+					}
+				case .bytes, .string, .date, .null:
+					() // do nothing. these were cleaned right after use or not allocated at all
+				}
+			}
 		}
 	}
 }
