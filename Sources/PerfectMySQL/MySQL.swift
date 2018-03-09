@@ -224,23 +224,27 @@ public final class MySQL {
 	}
 	
 	/// Sets connect options for connect()
+	@discardableResult
 	public func setOption(_ option: MySQLOpt) -> Bool {
 		return mysql_options(mysqlPtr, exposedOptionToMySQLOption(option), nil) == 0
 	}
 	
 	/// Sets connect options for connect() with boolean option argument
+	@discardableResult
 	public func setOption(_ option: MySQLOpt, _ b: Bool) -> Bool {
 		var myB = my_bool(b ? 1 : 0)
 		return mysql_options(mysqlPtr, exposedOptionToMySQLOption(option), &myB) == 0
 	}
 	
 	/// Sets connect options for connect() with integer option argument
+	@discardableResult
 	public func setOption(_ option: MySQLOpt, _ i: Int) -> Bool {
 		var myI = UInt32(i)
 		return mysql_options(mysqlPtr, exposedOptionToMySQLOption(option), &myI) == 0
 	}
 	
 	/// Sets connect options for connect() with string option argument
+	@discardableResult
 	public func setOption(_ option: MySQLOpt, _ s: String) -> Bool {
 		var b = false
 		s.withCString { p in
@@ -259,6 +263,9 @@ public final class MySQL {
 		deinit {
 			mysql_free_result(ptr)
 		}
+		
+		@available(*, deprecated)
+		public func close() {}
 		
 		/// Seeks to an arbitrary row number in a query result set
 		public func dataSeek(_ offset: UInt) {

@@ -247,8 +247,7 @@ class MySQLGenDelegate: SQLGenDelegate {
 			var ret: [MySQLColumnInfo] = []
 			while try exeDelegate.hasNext() {
 				let rowDecoder: CRUDRowDecoder<ColumnKey> = CRUDRowDecoder(delegate: exeDelegate)
-				let columnInfo = try MySQLColumnInfo(from: rowDecoder)
-				ret.append(columnInfo)
+				ret.append(try MySQLColumnInfo(from: rowDecoder))
 			}
 			guard !ret.isEmpty else {
 				return nil
