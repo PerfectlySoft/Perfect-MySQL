@@ -274,8 +274,25 @@ public final class MySQLStmt {
 		return Int(r)
 	}
 	
+	private func allocated(_ a: [UInt8]) -> UnsafeMutableRawBufferPointer? {
+		let buffer = UnsafeMutableRawBufferPointer.allocate(count: a.count)
+		buffer.copyBytes(from: a)
+		return buffer
+	}
+	
+	private func allocated(_ s: String) -> UnsafeMutableRawBufferPointer? {
+		let utf8 = Array(s.utf8) + [0]
+		return allocated(utf8)
+	}
+	
+	private func allocated(_ b: UnsafePointer<Int8>, length: Int) -> UnsafeMutableRawBufferPointer? {
+		let buffer = UnsafeMutableRawBufferPointer.allocate(count: length)
+		memcpy(buffer.baseAddress, b, length)
+		return buffer
+	}
+	
 	func bindParam(_ s: String, type: enum_field_types) {
-		guard let allocd = MySQL.allocated(s) else {
+		guard let allocd = allocated(s) else {
 			return
 		}
 		paramBinds?[paramBindsOffset].buffer_type = type
@@ -323,7 +340,7 @@ public final class MySQLStmt {
 	
 	/// create String parameter binding
 	public func bindParam(_ s: String) {
-		guard let allocd = MySQL.allocated(s) else {
+		guard let allocd = allocated(s) else {
 			return
 		}
 		paramBinds?[paramBindsOffset].buffer_type = MYSQL_TYPE_VAR_STRING
@@ -337,7 +354,7 @@ public final class MySQLStmt {
 	
 	/// create String parameter binding
 	public func bindParam(_ a: [UInt8]) {
-		guard let allocd = MySQL.allocated(a) else {
+		guard let allocd = allocated(a) else {
 			return
 		}
 		paramBinds?[paramBindsOffset].buffer_type = MYSQL_TYPE_LONG_BLOB
@@ -352,11 +369,14 @@ public final class MySQLStmt {
 	/// create Blob parameter binding
 	/// The memory for this bind must remain valid until the statement is dead/resets
 	public func bindParam(_ b: UnsafePointer<Int8>, length: Int) {
+		guard let allocd = allocated(b, length: length) else {
+			return
+		}
 		paramBinds?[paramBindsOffset].buffer_type = MYSQL_TYPE_LONG_BLOB
 		paramBinds?[paramBindsOffset].buffer_length = UInt(length)
 		paramBinds?[paramBindsOffset].length = UnsafeMutablePointer<UInt>.allocate(capacity: 1)
 		paramBinds?[paramBindsOffset].length.initialize(to: UInt(length))
-		paramBinds?[paramBindsOffset].buffer = UnsafeMutableRawPointer(UnsafeMutablePointer(mutating: b))
+		paramBinds?[paramBindsOffset].buffer = allocd.baseAddress
 		
 		paramBindsOffset += 1
 	}

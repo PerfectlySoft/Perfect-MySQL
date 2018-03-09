@@ -56,17 +56,6 @@ public final class MySQL {
 		return Int(mysql_get_server_version(mysqlPtr))
 	}
 	
-	static func allocated(_ a: [UInt8]) -> UnsafeMutableRawBufferPointer? {
-		let buffer = UnsafeMutableRawBufferPointer.allocate(count: a.count)
-		buffer.copyBytes(from: a)
-		return buffer
-	}
-	
-	static func allocated(_ s: String) -> UnsafeMutableRawBufferPointer? {
-		let utf8 = Array(s.utf8) + [0]
-		return allocated(utf8)
-	}
-	
 	/// Connects to a MySQL server
 	public func connect(host: String? = nil, user: String? = nil, password: String? = nil, db: String? = nil, port: UInt32 = 0, socket: String? = nil, flag: UInt = 0) -> Bool {
 		let check = mysql_real_connect(mysqlPtr,

@@ -1067,7 +1067,7 @@ class PerfectMySQLTests: XCTestCase {
 			let newOne = TestTable1(id: 2000, name: "New One", integer: 40)
 			let newId: Int = try db.transaction {
 				try db.table(TestTable1.self).insert(newOne)
-				let newOne2 = TestTable1(id: 2000, name: "New One Updated", integer: 41)
+				let newOne2 = TestTable1(id: 2000, name: "New👻One Updated", integer: 41)
 				try db.table(TestTable1.self)
 					.where(\TestTable1.id == newOne.id)
 					.update(newOne2, setKeys: \.name)
@@ -1078,7 +1078,7 @@ class PerfectMySQLTests: XCTestCase {
 				.select().map { $0 }
 			XCTAssertEqual(1, j2.count)
 			XCTAssertEqual(2000, j2[0].id)
-			XCTAssertEqual("New One Updated", j2[0].name)
+			XCTAssertEqual("New👻One Updated", j2[0].name)
 			XCTAssertEqual(40, j2[0].integer)
 		} catch {
 			XCTFail("\(error)")
@@ -1411,6 +1411,53 @@ class PerfectMySQLTests: XCTestCase {
 		}
 	}
 	
+	func testAllPrimTypes() {
+		struct AllTypes: Codable {
+			let int: Int
+			let uint: UInt
+			let int64: Int64
+			let uint64: UInt64
+			let int32: Int32
+			let uint32: UInt32
+			let int16: Int16
+			let uint16: UInt16
+			let int8: Int8
+			let uint8: UInt8
+			let double: Double
+			let float: Float
+			let string: String
+			let bytes: [UInt8]
+			let b: Bool
+		}
+		do {
+			let db = try getTestDB()
+			try db.create(AllTypes.self, policy: .dropTable)
+			let model = AllTypes(int: 1, uint: 2, int64: 3, uint64: 4, int32: 5, uint32: 6, int16: 7, uint16: 8, int8: 9, uint8: 10, double: 11, float: 12, string: "13", bytes: [1, 4], b: true)
+			try db.table(AllTypes.self).insert(model)
+			
+			guard let f = try db.table(AllTypes.self).where(\AllTypes.int == 1).first() else {
+				return XCTFail("Nil result.")
+			}
+			XCTAssertEqual(model.int, f.int)
+			XCTAssertEqual(model.uint, f.uint)
+			XCTAssertEqual(model.int64, f.int64)
+			XCTAssertEqual(model.uint64, f.uint64)
+			XCTAssertEqual(model.int32, f.int32)
+			XCTAssertEqual(model.uint32, f.uint32)
+			XCTAssertEqual(model.int16, f.int16)
+			XCTAssertEqual(model.uint16, f.uint16)
+			XCTAssertEqual(model.int8, f.int8)
+			XCTAssertEqual(model.uint8, f.uint8)
+			XCTAssertEqual(model.double, f.double)
+			XCTAssertEqual(model.float, f.float)
+			XCTAssertEqual(model.string, f.string)
+			XCTAssertEqual(model.bytes, f.bytes)
+			XCTAssertEqual(model.b, f.b)
+		} catch {
+			XCTFail("\(error)")
+		}
+	}
+	
 	static var allTests = [
 		("testConnect", testConnect),
 		("testListDbs1", testListDbs1),
@@ -1452,7 +1499,8 @@ class PerfectMySQLTests: XCTestCase {
 		("testJunctionJoin", testJunctionJoin),
 		("testSelfJoin", testSelfJoin),
 		("testSelfJunctionJoin", testSelfJunctionJoin),
-		("testCodableProperty", testCodableProperty)
+		("testCodableProperty", testCodableProperty),
+		("testAllPrimTypes", testAllPrimTypes)
 	]
 }
 

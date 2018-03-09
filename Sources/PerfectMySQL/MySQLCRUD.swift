@@ -51,7 +51,7 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 		return nil == column(key)
 	}
 	func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool {
-		return (column(key) as? Bool) ?? false
+		return ((column(key) as? Int8) ?? 0) != 0
 	}
 	func decode(_ type: Int.Type, forKey key: Key) throws -> Int {
 		let a = column(key)
@@ -77,7 +77,15 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 		return (column(key) as? Int64) ?? 0
 	}
 	func decode(_ type: UInt.Type, forKey key: Key) throws -> UInt {
-		return (column(key) as? UInt) ?? 0
+		let a = column(key)
+		switch a {
+		case let i as UInt64:
+			return UInt(i)
+		case let i as UInt:
+			return i
+		default:
+			throw MySQLCRUDError("Could not convert \(String(describing: a)) into an UInt.")
+		}
 	}
 	func decode(_ type: UInt8.Type, forKey key: Key) throws -> UInt8 {
 		return (column(key) as? UInt8) ?? 0
@@ -274,15 +282,15 @@ class MySQLGenDelegate: SQLGenDelegate {
 		case is Int64.Type:
 			typeName = "bigint"
 		case is UInt.Type:
-			typeName = "bigint"
+			typeName = "bigint unsigned"
 		case is UInt8.Type:
-			typeName = "tinyint"
+			typeName = "tinyint unsigned"
 		case is UInt16.Type:
-			typeName = "smallint"
+			typeName = "smallint unsigned"
 		case is UInt32.Type:
-			typeName = "int"
+			typeName = "int unsigned"
 		case is UInt64.Type:
-			typeName = "bigint"
+			typeName = "bigint unsigned"
 		case is Double.Type:
 			typeName = "double"
 		case is Float.Type:
