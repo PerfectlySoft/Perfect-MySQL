@@ -131,12 +131,16 @@ public final class MySQLStmt {
 				switch bind.buffer_type.rawValue {
 				case MYSQL_TYPE_DOUBLE.rawValue:
 					bind.buffer.assumingMemoryBound(to: Double.self).deallocate(capacity: 1)
+				case MYSQL_TYPE_FLOAT.rawValue:
+					bind.buffer.assumingMemoryBound(to: Float.self).deallocate(capacity: 1)
 				case MYSQL_TYPE_LONGLONG.rawValue:
-					if bind.is_unsigned == 1 {
-						bind.buffer.assumingMemoryBound(to: UInt64.self).deallocate(capacity: 1)
-					} else {
-						bind.buffer.assumingMemoryBound(to: Int64.self).deallocate(capacity: 1)
-					}
+					bind.buffer.assumingMemoryBound(to: UInt64.self).deallocate(capacity: 1)
+				case MYSQL_TYPE_LONG.rawValue:
+					bind.buffer.assumingMemoryBound(to: UInt32.self).deallocate(capacity: 1)
+				case MYSQL_TYPE_SHORT.rawValue:
+					bind.buffer.assumingMemoryBound(to: UInt16.self).deallocate(capacity: 1)
+				case MYSQL_TYPE_TINY.rawValue:
+					bind.buffer.assumingMemoryBound(to: UInt8.self).deallocate(capacity: 1)
 				case MYSQL_TYPE_VAR_STRING.rawValue,
 					 MYSQL_TYPE_DATE.rawValue,
 					 MYSQL_TYPE_DATETIME.rawValue:
@@ -280,6 +284,13 @@ public final class MySQLStmt {
 		return buffer
 	}
 	
+	private func allocated(_ a: [Int8]) -> UnsafeMutableRawBufferPointer? {
+		let buffer = UnsafeMutableRawBufferPointer.allocate(count: a.count)
+		var u = UnsafeRawPointer(a)
+		memcpy(buffer.baseAddress, u, a.count)
+		return buffer
+	}
+	
 	private func allocated(_ s: String) -> UnsafeMutableRawBufferPointer? {
 		let utf8 = Array(s.utf8) + [0]
 		return allocated(utf8)
@@ -315,26 +326,93 @@ public final class MySQLStmt {
 		paramBindsOffset += 1
 	}
 	
-	/// create Int parameter binding
-	public func bindParam(_ i: Int) {
-		paramBinds?[paramBindsOffset].buffer_type = MYSQL_TYPE_LONGLONG
-		paramBinds?[paramBindsOffset].buffer_length = UInt(MemoryLayout<Int64>.size)
-		let a = UnsafeMutablePointer<Int64>.allocate(capacity: 1)
-		a.initialize(to: Int64(i))
+	/// create Float parameter binding
+	public func bindParam(_ d: Float) {
+		paramBinds?[paramBindsOffset].buffer_type = MYSQL_TYPE_FLOAT
+		paramBinds?[paramBindsOffset].buffer_length = UInt(MemoryLayout<Float>.size)
+		let a = UnsafeMutablePointer<Float>.allocate(capacity: 1)
+		a.initialize(to: d)
 		paramBinds?[paramBindsOffset].buffer = UnsafeMutableRawPointer(a)
 		
 		paramBindsOffset += 1
 	}
 	
+	private func genBind<T>(type: enum_field_types, value: T) -> MYSQL_BIND {
+		var bind = MYSQL_BIND()
+		bind.buffer_type = type
+		bind.buffer_length = UInt(MemoryLayout<T>.size)
+		let b = UnsafeMutablePointer<T>.allocate(capacity: 1)
+		b.initialize(to: value)
+		bind.buffer = UnsafeMutableRawPointer(b)
+		return bind
+	}
+	
+	private func genBind<T: UnsignedInteger>(type: enum_field_types, value: T) -> MYSQL_BIND {
+		var bind = MYSQL_BIND()
+		bind.buffer_type = type
+		bind.is_unsigned = 1
+		bind.buffer_length = UInt(MemoryLayout<T>.size)
+		let b = UnsafeMutablePointer<T>.allocate(capacity: 1)
+		b.initialize(to: value)
+		bind.buffer = UnsafeMutableRawPointer(b)
+		return bind
+	}
+	
+	/// create Int parameter binding
+	public func bindParam(_ i: Int) {
+		bindParam(Int64(i))
+	}
+	
+	/// create UInt parameter binding
+	public func bindParam(_ i: UInt) {
+		bindParam(UInt64(i))
+	}
+	
+	/// create Int64 parameter binding
+	public func bindParam(_ i: Int64) {
+		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_LONGLONG, value: i)
+		paramBindsOffset += 1
+	}
+	
 	/// create UInt64 parameter binding
 	public func bindParam(_ i: UInt64) {
-		paramBinds?[paramBindsOffset].buffer_type = MYSQL_TYPE_LONGLONG
-		paramBinds?[paramBindsOffset].buffer_length = UInt(MemoryLayout<UInt64>.size)
-		let a = UnsafeMutablePointer<UInt64>.allocate(capacity: 1)
-		a.initialize(to: UInt64(i))
-		paramBinds?[paramBindsOffset].is_unsigned = 1
-		paramBinds?[paramBindsOffset].buffer = UnsafeMutableRawPointer(a)
-		
+		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_LONGLONG, value: i)
+		paramBindsOffset += 1
+	}
+	
+	/// create Int32 parameter binding
+	public func bindParam(_ i: Int32) {
+		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_LONG, value: i)
+		paramBindsOffset += 1
+	}
+	
+	/// create UInt32 parameter binding
+	public func bindParam(_ i: UInt32) {
+		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_LONG, value: i)
+		paramBindsOffset += 1
+	}
+	
+	/// create Int16 parameter binding
+	public func bindParam(_ i: Int16) {
+		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_SHORT, value: i)
+		paramBindsOffset += 1
+	}
+	
+	/// create UInt16 parameter binding
+	public func bindParam(_ i: UInt16) {
+		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_SHORT, value: i)
+		paramBindsOffset += 1
+	}
+	
+	/// create Int16 parameter binding
+	public func bindParam(_ i: Int8) {
+		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_TINY, value: i)
+		paramBindsOffset += 1
+	}
+	
+	/// create UInt16 parameter binding
+	public func bindParam(_ i: UInt8) {
+		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_TINY, value: i)
 		paramBindsOffset += 1
 	}
 	
@@ -362,12 +440,24 @@ public final class MySQLStmt {
 		paramBinds?[paramBindsOffset].length = UnsafeMutablePointer<UInt>.allocate(capacity: 1)
 		paramBinds?[paramBindsOffset].length.initialize(to: UInt(allocd.count))
 		paramBinds?[paramBindsOffset].buffer = allocd.baseAddress
-		
+		paramBindsOffset += 1
+	}
+	
+	/// create String parameter binding
+	public func bindParam(_ a: [Int8]) {
+		guard let allocd = allocated(a) else {
+			return
+		}
+		paramBinds?[paramBindsOffset].buffer_type = MYSQL_TYPE_LONG_BLOB
+		paramBinds?[paramBindsOffset].buffer_length = UInt(allocd.count)
+		paramBinds?[paramBindsOffset].length = UnsafeMutablePointer<UInt>.allocate(capacity: 1)
+		paramBinds?[paramBindsOffset].length.initialize(to: UInt(allocd.count))
+		paramBinds?[paramBindsOffset].buffer = allocd.baseAddress
 		paramBindsOffset += 1
 	}
 	
 	/// create Blob parameter binding
-	/// The memory for this bind must remain valid until the statement is dead/resets
+	/// The memory is copied.
 	public func bindParam(_ b: UnsafePointer<Int8>, length: Int) {
 		guard let allocd = allocated(b, length: length) else {
 			return
@@ -387,9 +477,6 @@ public final class MySQLStmt {
 		paramBinds?[paramBindsOffset].length = UnsafeMutablePointer<UInt>.allocate(capacity: 1)
 		paramBindsOffset += 1
 	}
-	
-	//commented out Iterator Protocol until next() function can be implemented tt 04272016
-	//public final class Results: IteratorProtocol {
 	
 	/// manage results sets for MysqlStmt
 	public final class Results: IteratorProtocol {

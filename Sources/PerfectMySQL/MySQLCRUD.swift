@@ -426,6 +426,28 @@ class MySQLStmtExeDelegate: SQLExeDelegate {
 			 .greaterThan(_, _), .greaterThanEqual(_, _),
 			 .keyPath(_), .in(_, _), .like(_, _, _, _):
 			throw MySQLCRUDError("Asked to bind unsupported expression type: \(expr)")
+		case .uinteger(let i):
+			statement.bindParam(i)
+		case .integer64(let i):
+			statement.bindParam(i)
+		case .uinteger64(let i):
+			statement.bindParam(i)
+		case .integer32(let i):
+			statement.bindParam(i)
+		case .uinteger32(let i):
+			statement.bindParam(i)
+		case .integer16(let i):
+			statement.bindParam(i)
+		case .uinteger16(let i):
+			statement.bindParam(i)
+		case .integer8(let i):
+			statement.bindParam(i)
+		case .uinteger8(let i):
+			statement.bindParam(i)
+		case .float(let d):
+			statement.bindParam(d)
+		case .sblob(let b):
+			statement.bindParam(b)
 		}
 	}
 }
