@@ -1639,6 +1639,16 @@ class PerfectMySQLTests: XCTestCase {
 		}
 	}
 	
+	func testBespokeSQL() {
+		do {
+			let db = try getTestDB()
+			let r = try db.sql("SELECT * FROM \(TestTable1.CRUDTableName) WHERE id = 2", TestTable1.self)
+			XCTAssertEqual(r.count, 1)
+		} catch {
+			XCTFail("\(error)")
+		}
+	}
+	
 	static var allTests = [
 		("testConnect", testConnect),
 		("testListDbs1", testListDbs1),
@@ -1683,7 +1693,8 @@ class PerfectMySQLTests: XCTestCase {
 		("testCodableProperty", testCodableProperty),
 		("testBadDecoding", testBadDecoding),
 		("testAllPrimTypes1", testAllPrimTypes1),
-		("testAllPrimTypes2", testAllPrimTypes2)
+		("testAllPrimTypes2", testAllPrimTypes2),
+		("testBespokeSQL", testBespokeSQL)
 	]
 }
 
