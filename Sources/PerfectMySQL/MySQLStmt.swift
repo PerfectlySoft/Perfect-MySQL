@@ -130,21 +130,21 @@ public final class MySQLStmt {
 				let bind = paramBinds[i]
 				switch bind.buffer_type.rawValue {
 				case MYSQL_TYPE_DOUBLE.rawValue:
-					bind.buffer.assumingMemoryBound(to: Double.self).deallocate(capacity: 1)
+					bind.buffer.assumingMemoryBound(to: Double.self).deallocate()
 				case MYSQL_TYPE_FLOAT.rawValue:
-					bind.buffer.assumingMemoryBound(to: Float.self).deallocate(capacity: 1)
+					bind.buffer.assumingMemoryBound(to: Float.self).deallocate()
 				case MYSQL_TYPE_LONGLONG.rawValue:
-					bind.buffer.assumingMemoryBound(to: UInt64.self).deallocate(capacity: 1)
+					bind.buffer.assumingMemoryBound(to: UInt64.self).deallocate()
 				case MYSQL_TYPE_LONG.rawValue:
-					bind.buffer.assumingMemoryBound(to: UInt32.self).deallocate(capacity: 1)
+					bind.buffer.assumingMemoryBound(to: UInt32.self).deallocate()
 				case MYSQL_TYPE_SHORT.rawValue:
-					bind.buffer.assumingMemoryBound(to: UInt16.self).deallocate(capacity: 1)
+					bind.buffer.assumingMemoryBound(to: UInt16.self).deallocate()
 				case MYSQL_TYPE_TINY.rawValue:
-					bind.buffer.assumingMemoryBound(to: UInt8.self).deallocate(capacity: 1)
+					bind.buffer.assumingMemoryBound(to: UInt8.self).deallocate()
 				case MYSQL_TYPE_VAR_STRING.rawValue,
 					 MYSQL_TYPE_DATE.rawValue,
 					 MYSQL_TYPE_DATETIME.rawValue:
-					bind.buffer.assumingMemoryBound(to: Int8.self).deallocate(capacity: Int(bind.buffer_length))
+					bind.buffer.assumingMemoryBound(to: Int8.self).deallocate()
 				case MYSQL_TYPE_LONG_BLOB.rawValue,
 					 MYSQL_TYPE_NULL.rawValue:
 					()
@@ -152,7 +152,7 @@ public final class MySQLStmt {
 					assertionFailure("Unhandled MySQL type \(bind.buffer_type)")
 				}
 				if bind.length != nil {
-					bind.length.deallocate(capacity: 1)
+					bind.length.deallocate()
 				}
 				paramBinds[i] = MYSQL_BIND()
 			}
@@ -164,7 +164,7 @@ public final class MySQLStmt {
 		let count = paramBindsOffset
 		if count > 0, nil != paramBinds {
 			resetBinds()
-			paramBinds?.deallocate(capacity: count)
+			paramBinds?.deallocate()
 			paramBinds = nil
 			paramBindsOffset = 0
 		}
@@ -279,14 +279,14 @@ public final class MySQLStmt {
 	}
 	
 	private func allocated(_ a: [UInt8]) -> UnsafeMutableRawBufferPointer? {
-		let buffer = UnsafeMutableRawBufferPointer.allocate(count: a.count)
+		let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: a.count, alignment: 0)
 		buffer.copyBytes(from: a)
 		return buffer
 	}
 	
 	private func allocated(_ a: [Int8]) -> UnsafeMutableRawBufferPointer? {
-		let buffer = UnsafeMutableRawBufferPointer.allocate(count: a.count)
-		var u = UnsafeRawPointer(a)
+		let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: a.count, alignment: 0)
+		let u = UnsafeRawPointer(a)
 		memcpy(buffer.baseAddress, u, a.count)
 		return buffer
 	}
@@ -297,7 +297,7 @@ public final class MySQLStmt {
 	}
 	
 	private func allocated(_ b: UnsafePointer<Int8>, length: Int) -> UnsafeMutableRawBufferPointer? {
-		let buffer = UnsafeMutableRawBufferPointer.allocate(count: length)
+		let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: length, alignment: 0)
 		memcpy(buffer.baseAddress, b, length)
 		return buffer
 	}
@@ -511,9 +511,9 @@ public final class MySQLStmt {
 		
 		deinit {
 			unbind()
-			binds.deallocate(capacity: numFields)
-			lengthBuffers.deallocate(capacity: numFields)
-			isNullBuffers.deallocate(capacity: numFields)
+			binds.deallocate()
+			lengthBuffers.deallocate()
+			isNullBuffers.deallocate()
 		}
 		
 		public func fetchRow() -> Bool {
@@ -673,7 +673,7 @@ public final class MySQLStmt {
 			case .bytes:
 				let raw = UnsafeMutablePointer<UInt8>.allocate(capacity: length)
 				defer {
-					raw.deallocate(capacity: length)
+					raw.deallocate()
 				}
 				bind.buffer = UnsafeMutableRawPointer(raw)
 				bind.buffer_length = UInt(length)
@@ -686,7 +686,7 @@ public final class MySQLStmt {
 			case .string, .date:
 				let raw = UnsafeMutablePointer<UInt8>.allocate(capacity: length)
 				defer {
-					raw.deallocate(capacity: length)
+					raw.deallocate()
 				}
 				bind.buffer = UnsafeMutableRawPointer(raw)
 				bind.buffer_length = UInt(length)
@@ -815,34 +815,34 @@ public final class MySQLStmt {
 				case .double:
 					switch bind.buffer_type {
 					case MYSQL_TYPE_FLOAT:
-						bind.buffer.assumingMemoryBound(to: Float.self).deallocate(capacity: 1)
+						bind.buffer.assumingMemoryBound(to: Float.self).deallocate()
 					case MYSQL_TYPE_DOUBLE:
-						bind.buffer.assumingMemoryBound(to: Double.self).deallocate(capacity: 1)
+						bind.buffer.assumingMemoryBound(to: Double.self).deallocate()
 					default: break
 					}
 				case .integer:
 					if bind.is_unsigned == 1 {
 						switch bind.buffer_type {
 						case MYSQL_TYPE_LONGLONG:
-							bind.buffer.assumingMemoryBound(to: UInt64.self).deallocate(capacity: 1)
+							bind.buffer.assumingMemoryBound(to: UInt64.self).deallocate()
 						case MYSQL_TYPE_LONG, MYSQL_TYPE_INT24:
-							bind.buffer.assumingMemoryBound(to: UInt32.self).deallocate(capacity: 1)
+							bind.buffer.assumingMemoryBound(to: UInt32.self).deallocate()
 						case MYSQL_TYPE_SHORT:
-							bind.buffer.assumingMemoryBound(to: UInt16.self).deallocate(capacity: 1)
+							bind.buffer.assumingMemoryBound(to: UInt16.self).deallocate()
 						case MYSQL_TYPE_TINY:
-							bind.buffer.assumingMemoryBound(to: UInt8.self).deallocate(capacity: 1)
+							bind.buffer.assumingMemoryBound(to: UInt8.self).deallocate()
 						default: break
 						}
 					} else {
 						switch bind.buffer_type {
 						case MYSQL_TYPE_LONGLONG:
-							bind.buffer.assumingMemoryBound(to: Int64.self).deallocate(capacity: 1)
+							bind.buffer.assumingMemoryBound(to: Int64.self).deallocate()
 						case MYSQL_TYPE_LONG, MYSQL_TYPE_INT24:
-							bind.buffer.assumingMemoryBound(to: Int32.self).deallocate(capacity: 1)
+							bind.buffer.assumingMemoryBound(to: Int32.self).deallocate()
 						case MYSQL_TYPE_SHORT:
-							bind.buffer.assumingMemoryBound(to: Int16.self).deallocate(capacity: 1)
+							bind.buffer.assumingMemoryBound(to: Int16.self).deallocate()
 						case MYSQL_TYPE_TINY:
-							bind.buffer.assumingMemoryBound(to: Int8.self).deallocate(capacity: 1)
+							bind.buffer.assumingMemoryBound(to: Int8.self).deallocate()
 						default: break
 						}
 					}

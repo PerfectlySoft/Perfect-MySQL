@@ -217,7 +217,7 @@ class MySQLGenDelegate: SQLGenDelegate {
 				ALTER TABLE \(try quote(identifier: forTable.tableName)) DROP COLUMN \(try quote(identifier: $0))
 				"""
 			}
-			sub += try addColumns.flatMap { newColumnMap[$0] }.map {
+			sub += try addColumns.compactMap { newColumnMap[$0] }.map {
 				let nameType = try getColumnDefinition($0)
 				return """
 				ALTER TABLE \(try quote(identifier: forTable.tableName)) ADD COLUMN \(nameType)

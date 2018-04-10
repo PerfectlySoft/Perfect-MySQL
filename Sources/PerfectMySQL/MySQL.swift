@@ -303,3 +303,23 @@ public final class MySQL {
 		}
 	}
 }
+
+#if swift(>=4.1)
+#else
+// Added for Swift 4.0/4.1 compat
+extension UnsafeMutableRawBufferPointer {
+	static func allocate(byteCount: Int, alignment: Int) -> UnsafeMutableRawBufferPointer {
+		return allocate(count: byteCount)
+	}
+}
+extension UnsafeMutablePointer {
+	func deallocate() {
+		deallocate(capacity: 0)
+	}
+}
+extension Collection {
+	func compactMap<ElementOfResult>(_ transform: (Element) throws -> ElementOfResult?) rethrows -> [ElementOfResult] {
+		return try flatMap(transform)
+	}
+}
+#endif

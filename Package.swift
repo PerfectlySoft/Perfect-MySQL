@@ -20,33 +20,22 @@
 import PackageDescription
 
 #if os(macOS)
-let package = Package(
-	name: "PerfectMySQL",
-	products: [
-		.library(name: "PerfectMySQL", targets: ["PerfectMySQL"])
-	],
-	dependencies: [
-		.package(url: "https://github.com/PerfectlySoft/Perfect-CRUD.git", .branch("master")),
-		.package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient.git", from: "2.0.0"),
-		],
-	targets: [
-		.target(name: "PerfectMySQL", dependencies: ["PerfectCRUD"]),
-		.testTarget(name: "PerfectMySQLTests", dependencies: ["PerfectMySQL"])
-	]
-)
+let clientPackage = "Perfect-mysqlclient"
 #else
+let clientPackage = "Perfect-mysqlclient-Linux"
+#endif
+
 let package = Package(
 	name: "PerfectMySQL",
 	products: [
 		.library(name: "PerfectMySQL", targets: ["PerfectMySQL"])
 	],
 	dependencies: [
-		.package(url: "https://github.com/PerfectlySoft/Perfect-CRUD.git", .branch("master")),
-		.package(url: "https://github.com/PerfectlySoft/Perfect-mysqlclient-Linux.git", from: "2.0.0"),
+		.package(url: "https://github.com/PerfectlySoft/Perfect-CRUD.git", from: "1.0.0"),
+		.package(url: "https://github.com/PerfectlySoft/\(clientPackage).git", from: "2.0.0"),
 		],
 	targets: [
 		.target(name: "PerfectMySQL", dependencies: ["PerfectCRUD"]),
 		.testTarget(name: "PerfectMySQLTests", dependencies: ["PerfectMySQL"])
 	]
 )
-#endif
