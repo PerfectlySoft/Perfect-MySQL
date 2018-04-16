@@ -454,6 +454,19 @@ class MySQLStmtExeDelegate: SQLExeDelegate {
 
 public struct MySQLDatabaseConfiguration: DatabaseConfigurationProtocol {
 	let connection: MySQL
+	
+	public init(url: String?,
+				name: String?,
+				host: String?,
+				port: Int?,
+				user: String?,
+				pass: String?) throws {
+		guard let database = name, let host = host else {
+			throw MySQLCRUDError("Database name and host must be provided.")
+		}
+		try self.init(database: database, host: host, port: port, username: user, password: pass)
+	}
+	
 	public init(database: String,
 				host: String,
 				port: Int? = nil,
