@@ -130,6 +130,14 @@ public final class MySQL {
 		}
 		return MySQL.Results(ret)
 	}
+ 
+    public func lastInsertId() -> Int64 {
+        return Int64(mysql_insert_id(mysqlPtr))
+    }
+    
+    public func numberAffectedRows() -> Int64 {
+        return Int64(mysql_affected_rows(mysqlPtr))
+    }
 	
 	func exposedOptionToMySQLOption(_ o: MySQLOpt) -> mysql_option {
 		switch o {
