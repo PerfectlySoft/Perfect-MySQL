@@ -210,10 +210,15 @@ public final class MySQLStmt {
 	/// Executes a prepared statement, binding parameters if needed
 	public func execute() -> Bool {
 		if paramBindsOffset > 0 {
-			guard let paramBinds = self.paramBinds,
-				0 == mysql_stmt_bind_param(ptr, paramBinds) else {
+			guard let paramBinds = self.paramBinds else {
 					return false
 			}
+      var res = mysql_stmt_bind_param(ptr, paramBinds)
+      var FALSE = 0
+      let cmp = memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res))
+      guard cmp == 0 else {
+        return false
+      }
 		}
 		let r = mysql_stmt_execute(ptr)
 		return r == 0
@@ -354,7 +359,7 @@ public final class MySQLStmt {
 	private func genBind<T: UnsignedInteger>(type: enum_field_types, value: T) -> MYSQL_BIND {
 		var bind = MYSQL_BIND()
 		bind.buffer_type = type
-		bind.is_unsigned = 1
+		memset(&(bind.is_unsigned), 1, MemoryLayout.size(ofValue: bind.is_unsigned))
 		bind.buffer_length = UInt(MemoryLayout<T>.size)
 		let b = UnsafeMutablePointer<T>.allocate(capacity: 1)
 		b.initialize(to: value)
@@ -634,7 +639,9 @@ public final class MySQLStmt {
 		
 		private func valueForField(_ n: Int) -> Any? {
 			var bind = binds[n]
-			guard bind.is_null.pointee == 0 else {
+      var FALSE = 0
+      var cmp = memcmp(bind.is_null, &FALSE, MemoryLayout.size(ofValue: bind.is_null.pointee))
+			guard cmp == 0 else {
 				return nil
 			}
 			let genType = mysqlTypeToGeneralType(bind.buffer_type)
@@ -649,7 +656,8 @@ public final class MySQLStmt {
 				default: return nil
 				}
 			case .integer:
-				if bind.is_unsigned == 1 {
+        cmp = memcmp(&(bind.is_unsigned), &FALSE, MemoryLayout.size(ofValue: bind.is_unsigned))
+				if cmp != 0 {
 					switch bind.buffer_type {
 					case MYSQL_TYPE_LONGLONG:
 						return bind.buffer.assumingMemoryBound(to: UInt64.self).pointee
@@ -762,8 +770,8 @@ public final class MySQLStmt {
 				var bind = bindField(field)
 				bind.length = lengthBuffers.advanced(by: i)
 				bind.length.initialize(to: 0)
-				bind.is_null = isNullBuffers.advanced(by: i)
-				bind.is_null.initialize(to: 0)
+				bind.is_null = unsafeBitCast(isNullBuffers.advanced(by: i), to: type(of: bind.is_null))
+        		memset(bind.is_null, 0, MemoryLayout.size(ofValue: bind.is_null.pointee))
 				
 				let genType = mysqlTypeToGeneralType(field)
 				switch genType {
@@ -777,7 +785,7 @@ public final class MySQLStmt {
 					}
 				case .integer:
 					if (f.flags & _UNSIGNED_FLAG) == _UNSIGNED_FLAG {
-						bind.is_unsigned = 1
+						memset(&(bind.is_unsigned), 1, MemoryLayout.size(ofValue: bind.is_unsigned))
 						switch bind.buffer_type {
 						case MYSQL_TYPE_LONGLONG:
 							bind = bindBuffer(bind, type: UInt64.self);
@@ -825,7 +833,10 @@ public final class MySQLStmt {
 					default: break
 					}
 				case .integer:
-					if bind.is_unsigned == 1 {
+          var FALSE = 0
+          var res = bind.is_unsigned
+          let cmp = memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res))
+					if cmp != 0 {
 						switch bind.buffer_type {
 						case MYSQL_TYPE_LONGLONG:
 							bind.buffer.assumingMemoryBound(to: UInt64.self).deallocate()
