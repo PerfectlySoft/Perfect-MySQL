@@ -101,22 +101,22 @@ public final class MySQL {
 	/// Commits the transaction
 	public func commit() -> Bool {
 		var res = mysql_commit(mysqlPtr)
-    var FALSE = 0
-    return memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res)) != 0
+    	var FALSE = 0
+    	return memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res)) != 0
 	}
 	
 	/// Rolls back the transaction
 	public func rollback() -> Bool {
 		var res = mysql_rollback(mysqlPtr)
-    var FALSE = 0
-    return memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res)) != 0
+    	var FALSE = 0
+    	return memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res)) != 0
 	}
 	
 	/// Checks whether any more results exist
 	public func moreResults() -> Bool {
 		var res = mysql_more_results(mysqlPtr)
-    var FALSE = 0
-    return memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res)) != 0
+    	var FALSE = 0
+    	return memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res)) != 0
 	}
 	
 	/// Returns/initiates the next result in multiple-result executions
@@ -175,10 +175,10 @@ public final class MySQL {
 			return MYSQL_OPT_WRITE_TIMEOUT
 		case MySQLOpt.MYSQL_OPT_USE_RESULT:
 			return MYSQL_OPT_USE_RESULT
-/*
+		/*
 		case MySQLOpt.MYSQL_OPT_USE_REMOTE_CONNECTION:
 			return MYSQL_OPT_USE_REMOTE_CONNECTION
-    case MySQLOpt.MYSQL_OPT_USE_EMBEDDED_CONNECTION:
+    	case MySQLOpt.MYSQL_OPT_USE_EMBEDDED_CONNECTION:
 			return MYSQL_OPT_USE_EMBEDDED_CONNECTION
 		case MySQLOpt.MYSQL_OPT_GUESS_CONNECTION:
 			return MYSQL_OPT_GUESS_CONNECTION
@@ -186,7 +186,7 @@ public final class MySQL {
 			return MYSQL_SET_CLIENT_IP
 		case MySQLOpt.MYSQL_SECURE_AUTH:
 			return MYSQL_SECURE_AUTH
-*/
+		*/
 		case MySQLOpt.MYSQL_REPORT_DATA_TRUNCATION:
 			return MYSQL_REPORT_DATA_TRUNCATION
 		case MySQLOpt.MYSQL_OPT_RECONNECT:

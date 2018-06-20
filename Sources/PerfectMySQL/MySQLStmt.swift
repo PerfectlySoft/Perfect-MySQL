@@ -213,12 +213,12 @@ public final class MySQLStmt {
 			guard let paramBinds = self.paramBinds else {
 					return false
 			}
-      var res = mysql_stmt_bind_param(ptr, paramBinds)
-      var FALSE = 0
-      let cmp = memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res))
-      guard cmp == 0 else {
-        return false
-      }
+      		var res = mysql_stmt_bind_param(ptr, paramBinds)
+      		var FALSE = 0
+      		let cmp = memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res))
+      		guard cmp == 0 else {
+				return false
+      		}
 		}
 		let r = mysql_stmt_execute(ptr)
 		return r == 0
@@ -639,8 +639,8 @@ public final class MySQLStmt {
 		
 		private func valueForField(_ n: Int) -> Any? {
 			var bind = binds[n]
-      var FALSE = 0
-      var cmp = memcmp(bind.is_null, &FALSE, MemoryLayout.size(ofValue: bind.is_null.pointee))
+      		var FALSE = 0
+      		var cmp = memcmp(bind.is_null, &FALSE, MemoryLayout.size(ofValue: bind.is_null.pointee))
 			guard cmp == 0 else {
 				return nil
 			}
@@ -656,7 +656,7 @@ public final class MySQLStmt {
 				default: return nil
 				}
 			case .integer:
-        cmp = memcmp(&(bind.is_unsigned), &FALSE, MemoryLayout.size(ofValue: bind.is_unsigned))
+        		cmp = memcmp(&(bind.is_unsigned), &FALSE, MemoryLayout.size(ofValue: bind.is_unsigned))
 				if cmp != 0 {
 					switch bind.buffer_type {
 					case MYSQL_TYPE_LONGLONG:
@@ -833,9 +833,9 @@ public final class MySQLStmt {
 					default: break
 					}
 				case .integer:
-          var FALSE = 0
-          var res = bind.is_unsigned
-          let cmp = memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res))
+          			var FALSE = 0
+          			var res = bind.is_unsigned
+          			let cmp = memcmp(&res, &FALSE, MemoryLayout.size(ofValue: res))
 					if cmp != 0 {
 						switch bind.buffer_type {
 						case MYSQL_TYPE_LONGLONG:
