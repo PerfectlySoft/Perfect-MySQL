@@ -79,7 +79,7 @@ After this you have to set the path for libraries again.
 ⚠️**NOTE**⚠️ The last mysql homebrew version that Perfect currently supports is 5.7.12, so please try this command when some missing type issues were found on your build:
 
 ```
-$ brew switch mysql 5.7.21
+$ brew install --v5.7.21 mysql && brew switch mysql 5.7.21
 ```
 
 ## Linux Build Notes
