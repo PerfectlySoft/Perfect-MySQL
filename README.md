@@ -23,7 +23,7 @@
 
 <p align="center">
     <a href="https://developer.apple.com/swift/" target="_blank">
-        <img src="https://img.shields.io/badge/Swift-4.0-orange.svg?style=flat" alt="Swift 4.0">
+        <img src="https://img.shields.io/badge/Swift-4.1-orange.svg?style=flat" alt="Swift 4.1">
     </a>
     <a href="https://developer.apple.com/swift/" target="_blank">
         <img src="https://img.shields.io/badge/Platforms-OS%20X%20%7C%20Linux%20-lightgray.svg?style=flat" alt="Platforms OS X | Linux">
@@ -43,7 +43,7 @@ This project provides a Swift wrapper around the MySQL client library, enabling 
 
 This package builds with Swift Package Manager and is part of the [Perfect](https://github.com/PerfectlySoft/Perfect) project. It was written to be stand-alone and so does not require PerfectLib or any other components.
 
-Ensure you have installed and activated the latest Swift 4.0 tool chain.
+Ensure you have installed and activated the latest Swift 4.1.2 tool chain.
 
 ## macOS Build Notes
 
@@ -76,7 +76,11 @@ swift package generate-xcodeproj
 ```
 After this you have to set the path for libraries again.
 
+⚠️**NOTE**⚠️ The last mysql homebrew version that Perfect currently supports is 5.7.12, so please try this command when some missing type issues were found on your build:
 
+```
+$ brew switch mysql 5.7.21
+```
 
 ## Linux Build Notes
 
@@ -93,7 +97,7 @@ Please note that Ubuntu 14 defaults to including a version of MySQL client which
 Add this project as a dependency in your Package.swift file.
 
 ``` swift
-.Package(url:"https://github.com/PerfectlySoft/Perfect-MySQL.git", majorVersion: 3)
+.package(url:"https://github.com/PerfectlySoft/Perfect-MySQL.git", from: "3.0.0")
 ```
 
 ## Documentation
