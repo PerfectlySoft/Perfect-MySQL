@@ -281,7 +281,7 @@ class PerfectMySQLTests: XCTestCase {
 		let mysql = rawMySQL
 		XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS all_data_types"))
 		
-		let qres = mysql.query(statement: "CREATE TABLE `all_data_types` (`varchar` VARCHAR( 20 ),\n`tinyint` TINYINT,\n`text` TEXT,\n`date` DATE,\n`smallint` SMALLINT,\n`mediumint` MEDIUMINT,\n`int` INT,\n`bigint` BIGINT,\n`ubigint` BIGINT UNSIGNED,\n`float` FLOAT( 10, 2 ),\n`double` DOUBLE,\n`decimal` DECIMAL( 10, 2 ),\n`datetime` DATETIME,\n`timestamp` TIMESTAMP,\n`time` TIME,\n`year` YEAR,\n`char` CHAR( 10 ),\n`tinyblob` TINYBLOB,\n`tinytext` TINYTEXT,\n`blob` BLOB,\n`mediumblob` MEDIUMBLOB,\n`mediumtext` MEDIUMTEXT,\n`longblob` LONGBLOB,\n`longtext` LONGTEXT,\n`enum` ENUM( '1', '2', '3' ),\n`set` SET( '1', '2', '3' ),\n`bool` BOOL,\n`binary` BINARY( 20 ),\n`varbinary` VARBINARY( 20 ) ) ENGINE = MYISAM")
+		let qres = mysql.query(statement: "CREATE TABLE `all_data_types` (`varchar` VARCHAR( 22 ),\n`tinyint` TINYINT,\n`text` TEXT,\n`date` DATE,\n`smallint` SMALLINT,\n`mediumint` MEDIUMINT,\n`int` INT,\n`bigint` BIGINT,\n`ubigint` BIGINT UNSIGNED,\n`float` FLOAT( 10, 2 ),\n`double` DOUBLE,\n`decimal` DECIMAL( 10, 2 ),\n`datetime` DATETIME,\n`timestamp` TIMESTAMP,\n`time` TIME,\n`year` YEAR,\n`char` CHAR( 10 ),\n`tinyblob` TINYBLOB,\n`tinytext` TINYTEXT,\n`blob` BLOB,\n`mediumblob` MEDIUMBLOB,\n`mediumtext` MEDIUMTEXT,\n`longblob` LONGBLOB,\n`longtext` LONGTEXT,\n`enum` ENUM( '1', '2', '3' ),\n`set` SET( '1', '2', '3' ),\n`bool` BOOL,\n`binary` BINARY( 20 ),\n`varbinary` VARBINARY( 20 ) ) ENGINE = MYISAM")
 		XCTAssert(qres == true, mysql.errorMessage())
 		
 		for _ in 1...2 {
@@ -290,7 +290,7 @@ class PerfectMySQLTests: XCTestCase {
 			XCTAssert(prepRes, stmt1.errorMessage())
 			XCTAssert(stmt1.paramCount() == 29)
 			
-			stmt1.bindParam("varchar 20 string 👻")
+			stmt1.bindParam("varchar '22' string 👻")
 			stmt1.bindParam(1)
 			stmt1.bindParam("text string")
 			stmt1.bindParam("2015-10-21")
@@ -341,7 +341,7 @@ class PerfectMySQLTests: XCTestCase {
 			let ok = results.forEachRow {
 				e in
 				
-				XCTAssertEqual(e[0] as? String, "varchar 20 string 👻")
+				XCTAssertEqual(e[0] as? String, "varchar '22' string 👻")
 				XCTAssertEqual(e[1] as? Int8, 1)
 				XCTAssertEqual(e[2] as? String, "text string")
 				XCTAssertEqual(e[3] as? String, "2015-10-21")
@@ -1016,12 +1016,13 @@ class PerfectMySQLTests: XCTestCase {
 		do {
 			let db = try getTestDB()
 			let t1 = db.table(TestTable1.self)
-			let newOne = TestTable1(id: 2000, name: "New One", integer: 40)
+			let newOne = TestTable1(id: 2000, name: "New ' One", integer: 40)
 			try t1.insert(newOne)
 			let j1 = t1.where(\TestTable1.id == newOne.id)
 			let j2 = try j1.select().map {$0}
 			XCTAssertEqual(try j1.count(), 1)
 			XCTAssertEqual(j2[0].id, 2000)
+			XCTAssertEqual(j2[0].name, "New ' One")
 		} catch {
 			XCTFail("\(error)")
 		}
