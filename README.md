@@ -58,7 +58,7 @@ To install Home Brew:
 To install MySQL:
 
 ```
-brew install mysql
+brew install mysql@5.7
 ```
 
 Unfortunately, at this point in time you will need to edit the mysqlclient.pc file located here:
@@ -76,10 +76,10 @@ swift package generate-xcodeproj
 ```
 After this you have to set the path for libraries again.
 
-⚠️**NOTE**⚠️ The last mysql homebrew version that Perfect currently supports is 5.7.12, so please try this command when some missing type issues were found on your build:
+⚠️**NOTE**⚠️ The last mysql homebrew version that Perfect currently supports is 5.7, so please try this command when some missing type issues were found on your build:
 
 ```
-$ brew install --v5.7.21 mysql && brew switch mysql 5.7.21
+$ brew install mysql@5.7 && brew link mysql@5.7 --force
 ```
 
 ## Linux Build Notes
