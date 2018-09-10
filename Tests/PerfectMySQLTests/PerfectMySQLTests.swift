@@ -22,7 +22,11 @@ import XCTest
 import PerfectCRUD
 
 let testDBRowCount = 5
+#if os(macOS)
 let testHost = "127.0.0.1"
+#else
+let testHost = "host.docker.internal"
+#endif
 let testUser = "root"
 let testPassword = ""
 let testDB = "test"
@@ -290,7 +294,7 @@ class PerfectMySQLTests: XCTestCase {
 			XCTAssert(prepRes, stmt1.errorMessage())
 			XCTAssert(stmt1.paramCount() == 29)
 			
-			stmt1.bindParam("varchar '22' string 👻")
+			stmt1.bindParam("varchar ’22’ string 👻")
 			stmt1.bindParam(1)
 			stmt1.bindParam("text string")
 			stmt1.bindParam("2015-10-21")
@@ -341,7 +345,7 @@ class PerfectMySQLTests: XCTestCase {
 			let ok = results.forEachRow {
 				e in
 				
-				XCTAssertEqual(e[0] as? String, "varchar '22' string 👻")
+				XCTAssertEqual(e[0] as? String, "varchar ’22’ string 👻")
 				XCTAssertEqual(e[1] as? Int8, 1)
 				XCTAssertEqual(e[2] as? String, "text string")
 				XCTAssertEqual(e[3] as? String, "2015-10-21")
@@ -1016,13 +1020,13 @@ class PerfectMySQLTests: XCTestCase {
 		do {
 			let db = try getTestDB()
 			let t1 = db.table(TestTable1.self)
-			let newOne = TestTable1(id: 2000, name: "New ' One", integer: 40)
+			let newOne = TestTable1(id: 2000, name: "New ` One", integer: 40)
 			try t1.insert(newOne)
 			let j1 = t1.where(\TestTable1.id == newOne.id)
 			let j2 = try j1.select().map {$0}
 			XCTAssertEqual(try j1.count(), 1)
 			XCTAssertEqual(j2[0].id, 2000)
-			XCTAssertEqual(j2[0].name, "New ' One")
+			XCTAssertEqual(j2[0].name, "New ` One")
 		} catch {
 			XCTFail("\(error)")
 		}
@@ -1689,6 +1693,27 @@ class PerfectMySQLTests: XCTestCase {
 		}
 	}
 	
+	func testURL() {
+		do {
+			let db = try getTestDB()
+			struct TableWithURL: Codable {
+				let id: Int
+				let url: URL
+			}
+			try db.create(TableWithURL.self)
+			let t1 = db.table(TableWithURL.self)
+			let newOne = TableWithURL(id: 2000, url: URL(string: "http://localhost/")!)
+			try t1.insert(newOne)
+			let j1 = t1.where(\TableWithURL.id == newOne.id)
+			let j2 = try j1.select().map {$0}
+			XCTAssertEqual(try j1.count(), 1)
+			XCTAssertEqual(j2[0].id, 2000)
+			XCTAssertEqual(j2[0].url.absoluteString, "http://localhost/")
+		} catch {
+			XCTFail("\(error)")
+		}
+	}
+	
 	static var allTests = [
 		("testConnect", testConnect),
 		("testListDbs1", testListDbs1),
@@ -1736,7 +1761,8 @@ class PerfectMySQLTests: XCTestCase {
 		("testBadDecoding", testBadDecoding),
 		("testAllPrimTypes1", testAllPrimTypes1),
 		("testAllPrimTypes2", testAllPrimTypes2),
-		("testBespokeSQL", testBespokeSQL)
+		("testBespokeSQL", testBespokeSQL),
+		("testURL", testURL)
 	]
 }
 

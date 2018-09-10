@@ -133,6 +133,11 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 				throw CRUDDecoderError("Invalid Date string \(String(describing: val)).")
 			}
 			return date as! T
+		case .url:
+			guard let str = val as? String, let url = URL(string: str) else {
+				throw CRUDDecoderError("Invalid URL string \(String(describing: val)).")
+			}
+			return url as! T
 		case .codable:
 			guard let data = (val as? String)?.data(using: .utf8) else {
 				throw CRUDDecoderError("Unsupported type: \(type) for key: \(key.stringValue)")
@@ -314,6 +319,8 @@ class MySQLGenDelegate: SQLGenDelegate {
 				typeName = "varchar(36)"
 			case .date:
 				typeName = "datetime"
+			case .url:
+				typeName = "longtext"
 			case .codable:
 				typeName = "json"
 			}
@@ -416,6 +423,8 @@ class MySQLStmtExeDelegate: SQLExeDelegate {
 			statement.bindParam(b ? 1 : 0)
 		case .date(let d):
 			statement.bindParam(d.mysqlFormatted())
+		case .url(let u):
+			statement.bindParam(u.absoluteString)
 		case .uuid(let u):
 			statement.bindParam(u.uuidString)
 		case .null:
