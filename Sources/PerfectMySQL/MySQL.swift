@@ -259,7 +259,7 @@ public final class MySQL {
 		return b
 	}
 	
-	/// Sets connect options after connect()
+	/// Sets server option (must be set after connect() is called)
 	@discardableResult
 	public func setServerOption(_ option: MySQLServerOpt) -> Bool {
 		return mysql_set_server_option(mysqlPtr, exposedOptionToMySQLServerOption(option)) == 0
