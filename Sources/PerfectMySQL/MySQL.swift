@@ -217,18 +217,18 @@ public final class MySQL {
 			return MYSQL_ENABLE_CLEARTEXT_PLUGIN
 		case MySQLOpt.MYSQL_OPT_CAN_HANDLE_EXPIRED_PASSWORDS:
 			return MYSQL_OPT_CAN_HANDLE_EXPIRED_PASSWORDS
-        }
-    }
-    
-    func exposedOptionToMySQLServerOption(_ o: MySQLServerOpt) -> enum_mysql_set_option {
-        switch o {
-        case MySQLServerOpt.MYSQL_OPTION_MULTI_STATEMENTS_ON:
-            return MYSQL_OPTION_MULTI_STATEMENTS_ON
-        case MySQLServerOpt.MYSQL_OPTION_MULTI_STATEMENTS_OFF:
-            return MYSQL_OPTION_MULTI_STATEMENTS_OFF
-        }
-    }
-	
+		}
+	}
+
+	func exposedOptionToMySQLServerOption(_ o: MySQLServerOpt) -> enum_mysql_set_option {
+		switch o {
+		case MySQLServerOpt.MYSQL_OPTION_MULTI_STATEMENTS_ON:
+			return MYSQL_OPTION_MULTI_STATEMENTS_ON
+		case MySQLServerOpt.MYSQL_OPTION_MULTI_STATEMENTS_OFF:
+			return MYSQL_OPTION_MULTI_STATEMENTS_OFF
+		}
+	}
+
 	/// Sets connect options for connect()
 	@discardableResult
 	public func setOption(_ option: MySQLOpt) -> Bool {
@@ -258,12 +258,12 @@ public final class MySQL {
 		}
 		return b
 	}
-    
-    /// Sets connect options after connect()
-    @discardableResult
-    public func setServerOption(_ option: MySQLServerOpt) -> Bool {
-        return mysql_set_server_option(mysqlPtr, exposedOptionToMySQLServerOption(option)) == 0
-    }
+	
+	/// Sets connect options after connect()
+	@discardableResult
+	public func setServerOption(_ option: MySQLServerOpt) -> Bool {
+		return mysql_set_server_option(mysqlPtr, exposedOptionToMySQLServerOption(option)) == 0
+	}
 	
 	/// Class used to manage and interact with result sets
 	public final class Results: IteratorProtocol {
