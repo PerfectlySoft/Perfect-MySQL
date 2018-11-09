@@ -58,8 +58,8 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 		switch a {
 		case let i as Int64:
 			return Int(i)
-        case let i as Int32:
-            return Int(i)
+		case let i as Int32:
+			return Int(i)
 		case let i as Int:
 			return i
 		default:
