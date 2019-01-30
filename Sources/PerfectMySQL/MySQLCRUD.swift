@@ -532,5 +532,13 @@ extension Date {
 	}
 }
 
-
-
+public extension Insert {
+	func lastInsertId() throws -> UInt64? {
+		let exeDelegate = try databaseConfiguration.sqlExeDelegate(forSQL: "SELECT LAST_INSERT_ID()")
+		guard try exeDelegate.hasNext(), let next: KeyedDecodingContainer<ColumnKey> = try exeDelegate.next() else {
+			throw CRUDSQLGenError("Did not get return value from statement \"SELECT LAST_INSERT_ID()\".")
+		}
+		let value = try next.decode(UInt64.self, forKey: ColumnKey(stringValue: "LAST_INSERT_ID()")!)
+		return value
+	}
+}
