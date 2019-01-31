@@ -187,6 +187,10 @@ class MySQLGenDelegate: SQLGenDelegate {
 		database = db
 	}
 	
+	func getEmptyInsertSnippet() -> String {
+		return "() VALUES ()"
+	}
+	
 	func getBinding(for expr: Expression) throws -> String {
 		bindings.append(("?", expr))
 		return "?"

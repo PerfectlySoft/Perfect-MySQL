@@ -1739,6 +1739,32 @@ class PerfectMySQLTests: XCTestCase {
 		}
 	}
 	
+	func testEmptyInsert() {
+		do {
+			let db = try getTestDB()
+			struct ReturningItem: Codable, Equatable {
+				let id: Int?
+				var def: Int?
+				init(id: Int, def: Int? = nil) {
+					self.id = id
+					self.def = def
+				}
+			}
+			try db.sql("DROP TABLE IF EXISTS \(ReturningItem.CRUDTableName)")
+			try db.sql("CREATE TABLE \(ReturningItem.CRUDTableName) (id INT PRIMARY KEY AUTO_INCREMENT, def INT DEFAULT 42)")
+			let table = db.table(ReturningItem.self)
+			
+			let id = try table
+				.insert(ReturningItem(id: 0, def: 0),
+						ignoreKeys: \ReturningItem.id, \ReturningItem.def)
+				.lastInsertId()
+			XCTAssertEqual(id, 1)
+			
+		} catch {
+			XCTFail("\(error)")
+		}
+	}
+	
 	static var allTests = [
 		("testConnect", testConnect),
 		("testListDbs1", testListDbs1),
@@ -1788,7 +1814,8 @@ class PerfectMySQLTests: XCTestCase {
 		("testAllPrimTypes2", testAllPrimTypes2),
 		("testBespokeSQL", testBespokeSQL),
 		("testURL", testURL),
-		("testLastInsertId", testLastInsertId)
+		("testLastInsertId", testLastInsertId),
+		("testEmptyInsert", testEmptyInsert)
 	]
 }
 
