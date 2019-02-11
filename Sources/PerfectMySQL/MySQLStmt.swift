@@ -808,6 +808,7 @@ public final class MySQLStmt {
 				}
 				binds.advanced(by: i).initialize(to: bind)
 			}
+			free(scratch)
 			mysql_stmt_bind_result(stmt.ptr, binds)
 		}
 		
