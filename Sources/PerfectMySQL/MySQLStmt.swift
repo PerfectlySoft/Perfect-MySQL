@@ -753,7 +753,11 @@ public final class MySQLStmt {
 		}
 		
 		private func bind() {
+			// empty buffer shared by .bytes, .string, .date, .null types
 			let scratch = UnsafeMutableRawPointer(UnsafeMutablePointer<Int8>.allocate(capacity: 0))
+			defer {
+				scratch.deallocate()
+			}
 			for i in 0..<numFields {
 				guard let field = mysql_fetch_field_direct(meta, UInt32(i)) else {
 					continue
@@ -808,7 +812,6 @@ public final class MySQLStmt {
 				}
 				binds.advanced(by: i).initialize(to: bind)
 			}
-			free(scratch)
 			mysql_stmt_bind_result(stmt.ptr, binds)
 		}
 		
