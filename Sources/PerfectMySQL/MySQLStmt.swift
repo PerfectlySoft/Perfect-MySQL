@@ -100,7 +100,7 @@ public final class MySQLStmt {
 			 MYSQL_TYPE_MEDIUM_BLOB,
 			 MYSQL_TYPE_LONG_BLOB,
 			 MYSQL_TYPE_BLOB:
-			if (field.pointee.flags & UInt32(BINARY_FLAG)) != 0 {
+			if field.pointee.charsetnr == 63 /* binary */ {
 				return .bytes
 			}
 			fallthrough
@@ -577,7 +577,7 @@ public final class MySQLStmt {
 				 MYSQL_TYPE_MEDIUM_BLOB,
 				 MYSQL_TYPE_LONG_BLOB,
 				 MYSQL_TYPE_BLOB:
-				if ( (field.pointee.flags & UInt32(BINARY_FLAG)) != 0) {
+				if field.pointee.charsetnr == 63 /* binary */ {
 					return .bytes(type)
 				}
 				fallthrough
