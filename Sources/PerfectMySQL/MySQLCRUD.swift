@@ -58,10 +58,16 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 		switch a {
 		case let i as Int64:
 			return Int(i)
+		case let i as Int32:
+			return Int(i)
+		case let i as Int16:
+			return Int(i)
+		case let i as Int8:
+			return Int(i)
 		case let i as Int:
 			return i
 		default:
-			throw MySQLCRUDError("Could not convert \(String(describing: a)) into an Int.")
+			throw MySQLCRUDError("Could not convert \(String(describing: a)) into an Int for key: \(key.stringValue)")
 		}
 	}
 	func decode(_ type: Int8.Type, forKey key: Key) throws -> Int8 {
@@ -81,10 +87,16 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 		switch a {
 		case let i as UInt64:
 			return UInt(i)
+		case let i as UInt32:
+			return UInt(i)
+		case let i as UInt16:
+			return UInt(i)
+		case let i as UInt8:
+			return UInt(i)
 		case let i as UInt:
 			return i
 		default:
-			throw MySQLCRUDError("Could not convert \(String(describing: a)) into an UInt.")
+			throw MySQLCRUDError("Could not convert \(String(describing: a)) into an UInt for key: \(key.stringValue)")
 		}
 	}
 	func decode(_ type: UInt8.Type, forKey key: Key) throws -> UInt8 {
@@ -133,6 +145,11 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 				throw CRUDDecoderError("Invalid Date string \(String(describing: val)).")
 			}
 			return date as! T
+		case .url:
+			guard let str = val as? String, let url = URL(string: str) else {
+				throw CRUDDecoderError("Invalid URL string \(String(describing: val)).")
+			}
+			return url as! T
 		case .codable:
 			guard let data = (val as? String)?.data(using: .utf8) else {
 				throw CRUDDecoderError("Unsupported type: \(type) for key: \(key.stringValue)")
@@ -178,6 +195,10 @@ class MySQLGenDelegate: SQLGenDelegate {
 	
 	init(connection db: MySQL) {
 		database = db
+	}
+	
+	func getEmptyInsertSnippet() -> String {
+		return "() VALUES ()"
 	}
 	
 	func getBinding(for expr: Expression) throws -> String {
@@ -314,6 +335,8 @@ class MySQLGenDelegate: SQLGenDelegate {
 				typeName = "varchar(36)"
 			case .date:
 				typeName = "datetime"
+			case .url:
+				typeName = "longtext"
 			case .codable:
 				typeName = "json"
 			}
@@ -416,6 +439,8 @@ class MySQLStmtExeDelegate: SQLExeDelegate {
 			statement.bindParam(b ? 1 : 0)
 		case .date(let d):
 			statement.bindParam(d.mysqlFormatted())
+		case .url(let u):
+			statement.bindParam(u.absoluteString)
 		case .uuid(let u):
 			statement.bindParam(u.uuidString)
 		case .null:
@@ -521,5 +546,13 @@ extension Date {
 	}
 }
 
-
-
+public extension Insert {
+	func lastInsertId() throws -> UInt64? {
+		let exeDelegate = try databaseConfiguration.sqlExeDelegate(forSQL: "SELECT LAST_INSERT_ID()")
+		guard try exeDelegate.hasNext(), let next: KeyedDecodingContainer<ColumnKey> = try exeDelegate.next() else {
+			throw CRUDSQLGenError("Did not get return value from statement \"SELECT LAST_INSERT_ID()\".")
+		}
+		let value = try next.decode(UInt64.self, forKey: ColumnKey(stringValue: "LAST_INSERT_ID()")!)
+		return value
+	}
+}

@@ -227,7 +227,16 @@ public final class MySQL {
 			return MYSQL_OPT_CAN_HANDLE_EXPIRED_PASSWORDS
 		}
 	}
-	
+
+	func exposedOptionToMySQLServerOption(_ o: MySQLServerOpt) -> enum_mysql_set_option {
+		switch o {
+		case MySQLServerOpt.MYSQL_OPTION_MULTI_STATEMENTS_ON:
+			return MYSQL_OPTION_MULTI_STATEMENTS_ON
+		case MySQLServerOpt.MYSQL_OPTION_MULTI_STATEMENTS_OFF:
+			return MYSQL_OPTION_MULTI_STATEMENTS_OFF
+		}
+	}
+
 	/// Sets connect options for connect()
 	@discardableResult
 	public func setOption(_ option: MySQLOpt) -> Bool {
@@ -256,6 +265,12 @@ public final class MySQL {
 			b = mysql_options(mysqlPtr, exposedOptionToMySQLOption(option), p) == 0
 		}
 		return b
+	}
+	
+	/// Sets server option (must be set after connect() is called)
+	@discardableResult
+	public func setServerOption(_ option: MySQLServerOpt) -> Bool {
+		return mysql_set_server_option(mysqlPtr, exposedOptionToMySQLServerOption(option)) == 0
 	}
 	
 	/// Class used to manage and interact with result sets

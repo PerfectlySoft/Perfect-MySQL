@@ -112,4 +112,8 @@ public enum MySQLOpt {
 	MYSQL_OPT_CAN_HANDLE_EXPIRED_PASSWORDS
 }
 
+/// enum for mysql server options
+public enum MySQLServerOpt {
+    case MYSQL_OPTION_MULTI_STATEMENTS_ON, MYSQL_OPTION_MULTI_STATEMENTS_OFF
+}
 

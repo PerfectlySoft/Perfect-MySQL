@@ -100,7 +100,7 @@ public final class MySQLStmt {
 			 MYSQL_TYPE_MEDIUM_BLOB,
 			 MYSQL_TYPE_LONG_BLOB,
 			 MYSQL_TYPE_BLOB:
-			if (field.pointee.flags & UInt32(BINARY_FLAG)) != 0 {
+			if field.pointee.charsetnr == 63 /* binary */ {
 				return .bytes
 			}
 			fallthrough
@@ -582,7 +582,7 @@ public final class MySQLStmt {
 				 MYSQL_TYPE_MEDIUM_BLOB,
 				 MYSQL_TYPE_LONG_BLOB,
 				 MYSQL_TYPE_BLOB:
-				if ( (field.pointee.flags & UInt32(BINARY_FLAG)) != 0) {
+				if field.pointee.charsetnr == 63 /* binary */ {
 					return .bytes(type)
 				}
 				fallthrough
@@ -761,7 +761,11 @@ public final class MySQLStmt {
 		}
 		
 		private func bind() {
+			// empty buffer shared by .bytes, .string, .date, .null types
 			let scratch = UnsafeMutableRawPointer(UnsafeMutablePointer<Int8>.allocate(capacity: 0))
+			defer {
+				scratch.deallocate()
+			}
 			for i in 0..<numFields {
 				guard let field = mysql_fetch_field_direct(meta, UInt32(i)) else {
 					continue

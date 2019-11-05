@@ -58,7 +58,7 @@ To install Home Brew:
 To install MySQL:
 
 ```
-brew install mysql
+brew install mysql@5.7
 ```
 
 Unfortunately, at this point in time you will need to edit the mysqlclient.pc file located here:

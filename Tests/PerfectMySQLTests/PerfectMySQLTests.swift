@@ -22,7 +22,11 @@ import XCTest
 import PerfectCRUD
 
 let testDBRowCount = 5
+#if os(macOS)
 let testHost = "127.0.0.1"
+#else
+let testHost = "host.docker.internal"
+#endif
 let testUser = "root"
 let testPassword = ""
 let testDB = "test"
@@ -280,8 +284,7 @@ class PerfectMySQLTests: XCTestCase {
 	func testQueryStmt2() {
 		let mysql = rawMySQL
 		XCTAssert(mysql.query(statement: "DROP TABLE IF EXISTS all_data_types"))
-		
-		let qres = mysql.query(statement: "CREATE TABLE `all_data_types` (`varchar` VARCHAR( 32 ),\n`tinyint` TINYINT,\n`text` TEXT,\n`date` DATE,\n`smallint` SMALLINT,\n`mediumint` MEDIUMINT,\n`int` INT,\n`bigint` BIGINT,\n`ubigint` BIGINT UNSIGNED,\n`float` FLOAT( 10, 2 ),\n`double` DOUBLE,\n`decimal` DECIMAL( 10, 2 ),\n`datetime` DATETIME,\n`timestamp` TIMESTAMP,\n`time` TIME,\n`year` YEAR,\n`char` CHAR( 10 ),\n`tinyblob` TINYBLOB,\n`tinytext` TINYTEXT,\n`blob` BLOB,\n`mediumblob` MEDIUMBLOB,\n`mediumtext` MEDIUMTEXT,\n`longblob` LONGBLOB,\n`longtext` LONGTEXT,\n`enum` ENUM( '1', '2', '3' ),\n`set` SET( '1', '2', '3' ),\n`bool` BOOL,\n`binary` BINARY( 20 ),\n`varbinary` VARBINARY( 20 ) ) ENGINE = MYISAM")
+		let qres = mysql.query(statement: "CREATE TABLE `all_data_types` (`varchar` VARCHAR( 22 ),\n`tinyint` TINYINT,\n`text` TEXT,\n`date` DATE,\n`smallint` SMALLINT,\n`mediumint` MEDIUMINT,\n`int` INT,\n`bigint` BIGINT,\n`ubigint` BIGINT UNSIGNED,\n`float` FLOAT( 10, 2 ),\n`double` DOUBLE,\n`decimal` DECIMAL( 10, 2 ),\n`datetime` DATETIME,\n`timestamp` TIMESTAMP,\n`time` TIME,\n`year` YEAR,\n`char` CHAR( 10 ),\n`tinyblob` TINYBLOB,\n`tinytext` TINYTEXT,\n`blob` BLOB,\n`mediumblob` MEDIUMBLOB,\n`mediumtext` MEDIUMTEXT,\n`longblob` LONGBLOB,\n`longtext` LONGTEXT,\n`enum` ENUM( '1', '2', '3' ),\n`set` SET( '1', '2', '3' ),\n`bool` BOOL,\n`binary` BINARY( 20 ),\n`varbinary` VARBINARY( 20 ) ) ENGINE = MYISAM")
 		XCTAssert(qres == true, mysql.errorMessage())
 		
 		for _ in 1...2 {
@@ -290,7 +293,7 @@ class PerfectMySQLTests: XCTestCase {
 			XCTAssert(prepRes, stmt1.errorMessage())
 			XCTAssert(stmt1.paramCount() == 29)
 			
-			stmt1.bindParam("varchar 20 string 👻")
+			stmt1.bindParam("varchar ’22’ string 👻")
 			stmt1.bindParam(1)
 			stmt1.bindParam("text string")
 			stmt1.bindParam("2015-10-21")
@@ -341,7 +344,7 @@ class PerfectMySQLTests: XCTestCase {
 			let ok = results.forEachRow {
 				e in
 				
-				XCTAssertEqual(e[0] as? String, "varchar 20 string 👻")
+				XCTAssertEqual(e[0] as? String, "varchar ’22’ string 👻")
 				XCTAssertEqual(e[1] as? Int8, 1)
 				XCTAssertEqual(e[2] as? String, "text string")
 				XCTAssertEqual(e[3] as? String, "2015-10-21")
@@ -1016,12 +1019,13 @@ class PerfectMySQLTests: XCTestCase {
 		do {
 			let db = try getTestDB()
 			let t1 = db.table(TestTable1.self)
-			let newOne = TestTable1(id: 2000, name: "New One", integer: 40)
+			let newOne = TestTable1(id: 2000, name: "New ` One", integer: 40)
 			try t1.insert(newOne)
 			let j1 = t1.where(\TestTable1.id == newOne.id)
 			let j2 = try j1.select().map {$0}
 			XCTAssertEqual(try j1.count(), 1)
 			XCTAssertEqual(j2[0].id, 2000)
+			XCTAssertEqual(j2[0].name, "New ` One")
 		} catch {
 			XCTFail("\(error)")
 		}
@@ -1671,12 +1675,109 @@ class PerfectMySQLTests: XCTestCase {
 			XCTFail("\(error)")
 		}
 	}
+
+	func testIntConversion() {
+		do {
+			let db = try getTestDB()
+			struct IntTest: Codable {
+				let id: Int
+			}
+			try db.sql("CREATE TABLE IntTest(id tinyint PRIMARY KEY)")
+			let table = db.table(IntTest.self)
+			let inserted = IntTest(id: 1)
+			try table.insert(inserted)
+			guard let selected = try db.table(IntTest.self).where(\IntTest.id == 1).first() else {
+				return XCTFail("Unable to find IntTest.")
+			}
+			XCTAssertEqual(selected.id, inserted.id)
+		} catch {
+			XCTFail("\(error)")
+		}
+	}
 	
 	func testBespokeSQL() {
 		do {
 			let db = try getTestDB()
-			let r = try db.sql("SELECT * FROM \(TestTable1.CRUDTableName) WHERE id = 2", TestTable1.self)
-			XCTAssertEqual(r.count, 1)
+			do {
+				let r = try db.sql("SELECT * FROM \(TestTable1.CRUDTableName) WHERE id = 2", TestTable1.self)
+				XCTAssertEqual(r.count, 1)
+			}
+			do {
+				let r = try db.sql("SELECT * FROM \(TestTable1.CRUDTableName)", TestTable1.self)
+				XCTAssertEqual(r.count, 5)
+			}
+		} catch {
+			XCTFail("\(error)")
+		}
+	}
+	
+	func testURL() {
+		do {
+			let db = try getTestDB()
+			struct TableWithURL: Codable {
+				let id: Int
+				let url: URL
+			}
+			try db.create(TableWithURL.self)
+			let t1 = db.table(TableWithURL.self)
+			let newOne = TableWithURL(id: 2000, url: URL(string: "http://localhost/")!)
+			try t1.insert(newOne)
+			let j1 = t1.where(\TableWithURL.id == newOne.id)
+			let j2 = try j1.select().map {$0}
+			XCTAssertEqual(try j1.count(), 1)
+			XCTAssertEqual(j2[0].id, 2000)
+			XCTAssertEqual(j2[0].url.absoluteString, "http://localhost/")
+		} catch {
+			XCTFail("\(error)")
+		}
+	}
+	
+	func testLastInsertId() {
+		do {
+			let db = try getTestDB()
+			struct ReturningItem: Codable, Equatable {
+				let id: UInt64?
+				var def: Int?
+				init(id: UInt64, def: Int? = nil) {
+					self.id = id
+					self.def = def
+				}
+			}
+			try db.sql("DROP TABLE IF EXISTS \(ReturningItem.CRUDTableName)")
+			try db.sql("CREATE TABLE \(ReturningItem.CRUDTableName) (id INT PRIMARY KEY AUTO_INCREMENT, def INT DEFAULT 42)")
+			let table = db.table(ReturningItem.self)
+			let id = try table
+				.insert(ReturningItem(id: 0, def: 0),
+						ignoreKeys: \ReturningItem.id)//, \ReturningItem.def)
+				.lastInsertId()
+			XCTAssertEqual(id, 1)
+			
+		} catch {
+			XCTFail("\(error)")
+		}
+	}
+	
+	func testEmptyInsert() {
+		do {
+			let db = try getTestDB()
+			struct ReturningItem: Codable, Equatable {
+				let id: Int?
+				var def: Int?
+				init(id: Int, def: Int? = nil) {
+					self.id = id
+					self.def = def
+				}
+			}
+			try db.sql("DROP TABLE IF EXISTS \(ReturningItem.CRUDTableName)")
+			try db.sql("CREATE TABLE \(ReturningItem.CRUDTableName) (id INT PRIMARY KEY AUTO_INCREMENT, def INT DEFAULT 42)")
+			let table = db.table(ReturningItem.self)
+			
+			let id = try table
+				.insert(ReturningItem(id: 0, def: 0),
+						ignoreKeys: \ReturningItem.id, \ReturningItem.def)
+				.lastInsertId()
+			XCTAssertEqual(id, 1)
+			
 		} catch {
 			XCTFail("\(error)")
 		}
@@ -1729,7 +1830,10 @@ class PerfectMySQLTests: XCTestCase {
 		("testBadDecoding", testBadDecoding),
 		("testAllPrimTypes1", testAllPrimTypes1),
 		("testAllPrimTypes2", testAllPrimTypes2),
-		("testBespokeSQL", testBespokeSQL)
+		("testBespokeSQL", testBespokeSQL),
+		("testURL", testURL),
+		("testLastInsertId", testLastInsertId),
+		("testEmptyInsert", testEmptyInsert)
 	]
 }
 
