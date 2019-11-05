@@ -76,12 +76,6 @@ swift package generate-xcodeproj
 ```
 After this you have to set the path for libraries again.
 
-⚠️**NOTE**⚠️ The last mysql homebrew version that Perfect currently supports is 5.7, so please try this command when some missing type issues were found on your build:
-
-```
-$ brew install mysql@5.7 && brew link mysql@5.7 --force
-```
-
 ## Linux Build Notes
 
 Ensure that you have installed libmysqlclient-dev for MySQL version *5.6 or greater*.
