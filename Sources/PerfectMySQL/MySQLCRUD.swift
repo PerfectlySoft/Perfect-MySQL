@@ -60,10 +60,14 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 			return Int(i)
 		case let i as Int32:
 			return Int(i)
+		case let i as Int16:
+			return Int(i)
+		case let i as Int8:
+			return Int(i)
 		case let i as Int:
 			return i
 		default:
-			throw MySQLCRUDError("Could not convert \(String(describing: a)) into an Int.")
+			throw MySQLCRUDError("Could not convert \(String(describing: a)) into an Int for key: \(key.stringValue)")
 		}
 	}
 	func decode(_ type: Int8.Type, forKey key: Key) throws -> Int8 {
@@ -83,10 +87,16 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 		switch a {
 		case let i as UInt64:
 			return UInt(i)
+		case let i as UInt32:
+			return UInt(i)
+		case let i as UInt16:
+			return UInt(i)
+		case let i as UInt8:
+			return UInt(i)
 		case let i as UInt:
 			return i
 		default:
-			throw MySQLCRUDError("Could not convert \(String(describing: a)) into an UInt.")
+			throw MySQLCRUDError("Could not convert \(String(describing: a)) into an UInt for key: \(key.stringValue)")
 		}
 	}
 	func decode(_ type: UInt8.Type, forKey key: Key) throws -> UInt8 {
