@@ -1676,6 +1676,25 @@ class PerfectMySQLTests: XCTestCase {
 			XCTFail("\(error)")
 		}
 	}
+
+	func testIntConversion() {
+		do {
+			let db = try getTestDB()
+			struct IntTest: Codable {
+				let id: Int
+			}
+			try db.sql("CREATE TABLE IntTest(id tinyint PRIMARY KEY)")
+			let table = db.table(IntTest.self)
+			let inserted = IntTest(id: 1)
+			try table.insert(inserted)
+			guard let selected = try db.table(IntTest.self).where(\IntTest.id == 1).first() else {
+				return XCTFail("Unable to find IntTest.")
+			}
+			XCTAssertEqual(selected.id, inserted.id)
+		} catch {
+			XCTFail("\(error)")
+		}
+	}
 	
 	func testBespokeSQL() {
 		do {
