@@ -97,7 +97,12 @@ public final class MySQL {
 		}
 		return result
 	}
-	
+
+	/// If false it starts transaction which can be rolled back
+	public func autocommit(_ autocommit: Bool) -> Bool {
+		return 1 == mysql_autocommit(mysqlPtr, autocommit ? 1 : 0)
+	}
+
 	/// Commits the transaction
 	public func commit() -> Bool {
 		var res = mysql_commit(mysqlPtr)
