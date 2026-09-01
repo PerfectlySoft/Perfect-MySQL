@@ -17,11 +17,6 @@
 //===----------------------------------------------------------------------===//
 //
 
-#if os(Linux)
-	import SwiftGlibc
-#else
-	import Darwin
-#endif
 import mysqlclient
 
 /// This class permits an UnsafeMutablePointer to be used as a IteratorProtocol
@@ -90,7 +85,7 @@ struct UTF8Encoding {
 }
 
 /// enum for mysql options
-public enum MySQLOpt {
+public enum MySQLOpt: Sendable {
 	case MYSQL_OPT_CONNECT_TIMEOUT, MYSQL_OPT_COMPRESS, MYSQL_OPT_NAMED_PIPE,
 	MYSQL_INIT_COMMAND, MYSQL_READ_DEFAULT_FILE, MYSQL_READ_DEFAULT_GROUP,
 	MYSQL_SET_CHARSET_DIR, MYSQL_SET_CHARSET_NAME, MYSQL_OPT_LOCAL_INFILE,
@@ -114,7 +109,7 @@ public enum MySQLOpt {
 }
 
 /// enum for mysql server options
-public enum MySQLServerOpt {
+public enum MySQLServerOpt: Sendable {
     case MYSQL_OPTION_MULTI_STATEMENTS_ON, MYSQL_OPTION_MULTI_STATEMENTS_OFF
 }
 

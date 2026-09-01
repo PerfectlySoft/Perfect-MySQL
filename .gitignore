@@ -70,3 +70,6 @@ docs/
 *.pins
 *.resolved
 
+
+# Local SwiftPM dependency mirrors (machine-specific absolute paths, never commit)
+.swiftpm/

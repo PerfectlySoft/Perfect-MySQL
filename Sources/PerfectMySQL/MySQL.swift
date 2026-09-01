@@ -5,16 +5,16 @@
 //  Created by Kyle Jessup on 2018-03-07.
 //
 
-#if os(Linux)
-	import SwiftGlibc
-#else
-	import Darwin
-#endif
 import mysqlclient
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 /// Provide access to MySQL connector functions
-public final class MySQL {
-	private static var initOnce: Bool = {
+public final class MySQL: @unchecked Sendable {
+	private static let initOnce: Bool = {
 		mysql_server_init(0, nil, nil)
 		return true
 	}()
@@ -32,7 +32,7 @@ public final class MySQL {
 	
 	/// Returns client info from mysql_get_client_info
 	public static func clientInfo() -> String {
-		return String(validatingUTF8: mysql_get_client_info()) ?? ""
+		return String(validatingCString: mysql_get_client_info()) ?? ""
 	}
 	
 	public func ping() -> Bool {
@@ -48,7 +48,7 @@ public final class MySQL {
 	}
 	/// Return mysql error message
 	public func errorMessage() -> String {
-		return String(validatingUTF8: mysql_error(mysqlPtr)) ?? ""
+		return String(validatingCString: mysql_error(mysqlPtr)) ?? ""
 	}
 	
 	/// Return mysql server version
@@ -76,7 +76,7 @@ public final class MySQL {
 		if let res = mysql_list_tables(mysqlPtr, wild) {
 			while let row = mysql_fetch_row(res) {
 				if let tabPtr = row[0] {
-					result.append(String(validatingUTF8: tabPtr) ?? "")
+					result.append(String(validatingCString: tabPtr) ?? "")
 				}
 			}
 			mysql_free_result(res)
@@ -90,7 +90,7 @@ public final class MySQL {
 		if let res = mysql_list_dbs(mysqlPtr, wild) {
 			while let row = mysql_fetch_row(res) {
 				if let tabPtr = row[0] {
-					result.append(String(validatingUTF8: tabPtr) ?? "")
+					result.append(String(validatingCString: tabPtr) ?? "")
 				}
 			}
 			mysql_free_result(res)
@@ -276,7 +276,7 @@ public final class MySQL {
 	}
 	
 	/// Class used to manage and interact with result sets
-	public final class Results: IteratorProtocol {
+	public final class Results: IteratorProtocol, @unchecked Sendable {
 		var ptr: UnsafeMutablePointer<MYSQL_RES>
 		public typealias Element = [String?]
 		init(_ ptr: UnsafeMutablePointer<MYSQL_RES>) {
@@ -336,23 +336,3 @@ public final class MySQL {
 		}
 	}
 }
-
-#if swift(>=4.1)
-#else
-// Added for Swift 4.0/4.1 compat
-extension UnsafeMutableRawBufferPointer {
-	static func allocate(byteCount: Int, alignment: Int) -> UnsafeMutableRawBufferPointer {
-		return allocate(count: byteCount)
-	}
-}
-extension UnsafeMutablePointer {
-	func deallocate() {
-		deallocate(capacity: 0)
-	}
-}
-extension Collection {
-	func compactMap<ElementOfResult>(_ transform: (Element) throws -> ElementOfResult?) rethrows -> [ElementOfResult] {
-		return try flatMap(transform)
-	}
-}
-#endif

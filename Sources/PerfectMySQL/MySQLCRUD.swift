@@ -8,7 +8,7 @@
 import Foundation
 import PerfectCRUD
 
-public struct MySQLCRUDError: Error, CustomStringConvertible {
+public struct MySQLCRUDError: Error, CustomStringConvertible, Sendable {
 	public let description: String
 	public init(_ msg: String) {
 		description = msg
@@ -19,7 +19,7 @@ public struct MySQLCRUDError: Error, CustomStringConvertible {
 // maps column name to position which must be computed once before row reading action
 typealias MySQLCRUDColumnMap = [String:Int]
 
-class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
+class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol, @unchecked Sendable {
 	typealias Key = K
 	var codingPath: [CodingKey] = []
 	var allKeys: [Key] = []
@@ -134,7 +134,7 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 			return ret as! T
 		case .data:
 			let bytes: [UInt8] = (val as? [UInt8]) ?? []
-			return Data(bytes: bytes) as! T
+			return Data(bytes) as! T
 		case .uuid:
 			guard let str = val as? String, let uuid = UUID(uuidString: str) else {
 				throw CRUDDecoderError("Invalid UUID string \(String(describing: val)).")
@@ -155,6 +155,18 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 				throw CRUDDecoderError("Unsupported type: \(type) for key: \(key.stringValue)")
 			}
 			return try JSONDecoder().decode(type, from: data)
+		case .wrapped:
+			// Property-wrapper-backed columns (e.g. @ForeignKey) were never
+			// actually decodable on this connector -- unconditionally
+			// threw here instead of delegating to the wrapper's own
+			// init(from:), unlike Perfect-SQLite's SQLiteCRUDRowReader
+			// (ADR-0001 Phase 4: found live, via a real @ForeignKey
+			// round-trip test against a running MySQL server, not by
+			// inspection -- the write path worked, but any subsequent
+			// SELECT on that same row silently looked empty, since
+			// SelectIterator.next() swallows decode errors).
+			let decoder = CRUDColumnValueDecoder(source: KeyedDecodingContainer(self), key: key)
+			return try T(from: decoder)
 		}
 	}
 	func nestedContainer<NestedKey>(keyedBy type: NestedKey.Type, forKey key: Key) throws -> KeyedDecodingContainer<NestedKey> where NestedKey : CodingKey {
@@ -171,7 +183,7 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol {
 	}
 }
 
-struct MySQLColumnInfo: Codable {
+struct MySQLColumnInfo: Codable, Sendable {
 	enum CodingKeys: String, CodingKey {
 		case field = "Field", type = "Type", null = "Null", key = "Key"
 	}
@@ -188,11 +200,19 @@ struct MySQLColumnInfo: Codable {
 	}
 }
 
-class MySQLGenDelegate: SQLGenDelegate {
+class MySQLGenDelegate: SQLGenDelegate, @unchecked Sendable {
 	let database: MySQL
 	var parentTableStack: [TableStructure] = []
 	var bindings: Bindings = []
-	
+	// FOREIGN KEY clauses accumulated per-column by getColumnDefinition(_:),
+	// emitted alongside the column list in getCreateTableSQL. Mirrors
+	// Perfect-SQLite's SQLiteGenDelegate.extraCreate -- this connector's own
+	// getColumnDefinition only ever branched on .primaryKey, never
+	// .foreignKey (ADR-0001 Phase 4), so @ForeignKey silently produced no
+	// constraint at all on MySQL/MariaDB while SQLite/Postgres emitted a
+	// real one for the exact same model.
+	var extraCreate: [String] = []
+
 	init(connection db: MySQL) {
 		database = db
 	}
@@ -201,7 +221,7 @@ class MySQLGenDelegate: SQLGenDelegate {
 		return "() VALUES ()"
 	}
 	
-	func getBinding(for expr: Expression) throws -> String {
+	func getBinding(for expr: CRUDExpression) throws -> String {
 		bindings.append(("?", expr))
 		return "?"
 	}
@@ -246,10 +266,14 @@ class MySQLGenDelegate: SQLGenDelegate {
 			}
 			return sub
 		} else {
+			// getColumnDefinition(_:) populates `extraCreate` (FOREIGN KEY
+			// clauses) as a side effect while mapping columns -- must be read
+			// after the map, not before.
+			let columnDefs = try forTable.columns.map { try getColumnDefinition($0) }
 			sub += [
 				"""
 				CREATE TABLE IF NOT EXISTS \(try quote(identifier: forTable.tableName)) (
-				\(try forTable.columns.map { try getColumnDefinition($0) }.joined(separator: ",\n\t"))
+				\((columnDefs + extraCreate).joined(separator: ",\n\t"))
 				)
 				"""]
 		}
@@ -319,7 +343,9 @@ class MySQLGenDelegate: SQLGenDelegate {
 		case is Bool.Type:
 			typeName = "tinyint"
 		case is String.Type:
-			typeName = "longtext"
+			// MySQL cannot use LONGTEXT as a primary key without a prefix length.
+			// Use VARCHAR(255) for primary key columns; longtext for everything else.
+			typeName = column.properties.contains(.primaryKey) ? "varchar(255)" : "longtext"
 		default:
 			guard let special = SpecialType(type) else {
 				throw MySQLCRUDError("Unsupported SQL column type \(type)")
@@ -339,15 +365,38 @@ class MySQLGenDelegate: SQLGenDelegate {
 				typeName = "longtext"
 			case .codable:
 				typeName = "json"
+			case .wrapped:
+				throw MySQLCRUDError("Unsupported SQL column type \(type)")
 			}
 		}
-		let addendum: String
-		if column.properties.contains(.primaryKey) {
-			addendum = " PRIMARY KEY"
-		} else if !column.optional {
-			addendum = " NOT NULL"
-		} else {
-			addendum = ""
+		var addendum = ""
+		for prop in column.properties {
+			switch prop {
+			case .primaryKey:
+				addendum += " PRIMARY KEY"
+			case .foreignKey(let table, let column, let onDelete, let onUpdate):
+				var str = "FOREIGN KEY (\(try quote(identifier: name))) REFERENCES \(try quote(identifier: table))(\(try quote(identifier: column)))"
+				let scenarios = [(" ON DELETE ", onDelete), (" ON UPDATE ", onUpdate)]
+				for (scenario, action) in scenarios {
+					str += scenario
+					switch action {
+					case .ignore:
+						str += "NO ACTION"
+					case .restrict:
+						str += "RESTRICT"
+					case .setNull:
+						str += "SET NULL"
+					case .setDefault:
+						str += "SET DEFAULT"
+					case .cascade:
+						str += "CASCADE"
+					}
+				}
+				extraCreate.append(str)
+			}
+		}
+		if !column.properties.contains(.primaryKey) && !column.optional {
+			addendum += " NOT NULL"
 		}
 		return "\(try quote(identifier: name)) \(typeName)\(addendum)"
 	}
@@ -355,7 +404,7 @@ class MySQLGenDelegate: SQLGenDelegate {
 
 typealias MySQLColumnMap = [String:Int]
 
-struct MySQLDirectExeDelegate: SQLExeDelegate {
+struct MySQLDirectExeDelegate: SQLExeDelegate, Sendable {
 	let connection: MySQL
 	let sql: String
 	func bind(_ bindings: Bindings, skip: Int) throws {
@@ -374,7 +423,7 @@ struct MySQLDirectExeDelegate: SQLExeDelegate {
 	}
 }
 
-class MySQLStmtExeDelegate: SQLExeDelegate {
+class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 	let connection: MySQL
 	let statement: MySQLStmt
 	var results: MySQLStmt.Results?
@@ -422,7 +471,30 @@ class MySQLStmtExeDelegate: SQLExeDelegate {
 															columns: columnMap,
 															row: row))
 	}
-	
+
+	func nextDynamicRow() throws -> DynamicRow? {
+		guard let row = results?.currentRow() else {
+			return nil
+		}
+		var values: [String: DynamicValue] = [:]
+		for (name, index) in columnMap {
+			guard row.indices.contains(index) else {
+				throw MySQLCRUDError("Missing dynamic row value for column \(name).")
+			}
+			values[name] = try mysqlDynamicValue(row[index], column: name)
+		}
+		return DynamicRow(values)
+	}
+
+	func affectedRowCount() -> Int {
+		Int(statement.affectedRows())
+	}
+
+	func lastInsertedID() -> Int64? {
+		let id = statement.insertId()
+		return id == 0 ? nil : Int64(id)
+	}
+
 	private func bindOne(expr: CRUDExpression) throws {
 		switch expr {
 		case .lazy(let e):
@@ -477,7 +549,52 @@ class MySQLStmtExeDelegate: SQLExeDelegate {
 	}
 }
 
-public struct MySQLDatabaseConfiguration: DatabaseConfigurationProtocol {
+func mysqlDynamicValue(_ value: Any?, column: String) throws -> DynamicValue {
+	switch value {
+	case nil:
+		return .null
+	case let value as Bool:
+		return .bool(value)
+	case let value as Int:
+		return .int(Int64(value))
+	case let value as Int8:
+		return .int(Int64(value))
+	case let value as Int16:
+		return .int(Int64(value))
+	case let value as Int32:
+		return .int(Int64(value))
+	case let value as Int64:
+		return .int(value)
+	case let value as UInt:
+		return .uint(UInt64(value))
+	case let value as UInt8:
+		return .uint(UInt64(value))
+	case let value as UInt16:
+		return .uint(UInt64(value))
+	case let value as UInt32:
+		return .uint(UInt64(value))
+	case let value as UInt64:
+		return .uint(value)
+	case let value as Float:
+		return .double(Double(value))
+	case let value as Double:
+		return .double(value)
+	case let value as String:
+		return .string(value)
+	case let value as [UInt8]:
+		return .bytes(value)
+	case let value as [Int8]:
+		return .bytes(value.map(UInt8.init(bitPattern:)))
+	case let value as Date:
+		return .date(value)
+	default:
+		throw MySQLCRUDError(
+			"Unsupported dynamic value type \(type(of: value)) for column \(column)."
+		)
+	}
+}
+
+public struct MySQLDatabaseConfiguration: DatabaseConfigurationProtocol, @unchecked Sendable {
 	let connection: MySQL
 	
 	public init(url: String?,

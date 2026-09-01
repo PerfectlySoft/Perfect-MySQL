@@ -5,15 +5,15 @@
 //  Created by Kyle Jessup on 2018-03-07.
 //
 
-#if os(Linux)
-	import SwiftGlibc
-#else
-	import Darwin
-#endif
 import mysqlclient
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 /// handles mysql prepared statements
-public final class MySQLStmt {
+public final class MySQLStmt: @unchecked Sendable {
 	private let ptr: UnsafeMutablePointer<MYSQL_STMT>
 	private var paramBinds: UnsafeMutablePointer<MYSQL_BIND>?
 	private var paramBindsOffset = 0
@@ -70,7 +70,7 @@ public final class MySQLStmt {
 			return nil
 		}
 		let f: MYSQL_FIELD = field.pointee
-		return FieldInfo(name: String(validatingUTF8: f.name) ?? "invalid field name", type: mysqlTypeToFieldType(field))
+		return FieldInfo(name: String(validatingCString: f.name) ?? "invalid field name", type: mysqlTypeToFieldType(field))
 	}
 	
 	func mysqlTypeToFieldType(_ field: UnsafeMutablePointer<MYSQL_FIELD>) -> FieldType {
@@ -182,7 +182,7 @@ public final class MySQLStmt {
 	
 	/// Returns the error message for the last statement execution
 	public func errorMessage() -> String {
-		return String(validatingUTF8: mysql_stmt_error(ptr)) ?? ""
+		return String(validatingCString: mysql_stmt_error(ptr)) ?? ""
 	}
 	
 	/// Prepares an SQL statement string for execution
@@ -291,9 +291,10 @@ public final class MySQLStmt {
 	
 	private func allocated(_ a: [Int8]) -> UnsafeMutableRawBufferPointer? {
 		let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: a.count, alignment: 0)
-		let u = UnsafeRawPointer(a)
-		if let p = buffer.baseAddress {
-			memcpy(p, u, a.count)
+		a.withUnsafeBytes { src in
+			if let srcBase = src.baseAddress, let dst = buffer.baseAddress {
+				memcpy(dst, srcBase, a.count)
+			}
 		}
 		return buffer
 	}
@@ -488,7 +489,7 @@ public final class MySQLStmt {
 	}
 	
 	/// manage results sets for MysqlStmt
-	public final class Results: IteratorProtocol {
+	public final class Results: IteratorProtocol, @unchecked Sendable {
 		let _UNSIGNED_FLAG = UInt32(UNSIGNED_FLAG)
 		public typealias Element = [Any?]
 		
