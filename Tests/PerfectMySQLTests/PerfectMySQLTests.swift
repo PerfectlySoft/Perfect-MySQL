@@ -64,6 +64,10 @@ var rawMySQL: MySQL {
 class PerfectMySQLTests: XCTestCase {
 	override func setUp() {
 		super.setUp()
+		// PerfectCRUD caches table structures by unqualified type name, so test-local
+		// types that share a name (e.g. `Me`, `Top`) would otherwise reuse another
+		// test's columns.
+		CRUDClearTableStructureCache()
 	}
 	override func tearDown() {
 		CRUDLogging.flush()
@@ -79,8 +83,8 @@ class PerfectMySQLTests: XCTestCase {
 		XCTAssert(mysql.setOption(.MYSQL_OPT_LOCAL_INFILE) == true)
 		XCTAssert(mysql.setOption(.MYSQL_OPT_CONNECT_TIMEOUT, 5) == true)
 		
-		let res = mysql.connect(host: testHost, user: testUser, password: testPassword)
-		
+		let res = mysql.connect(host: testHost, user: testUser, password: testPassword, port: UInt32(testPort ?? 0))
+
 		XCTAssert(res)
 		
 		if !res {
