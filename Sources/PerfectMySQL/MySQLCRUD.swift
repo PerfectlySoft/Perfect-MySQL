@@ -416,6 +416,28 @@ struct MySQLDirectExeDelegate: SQLExeDelegate, Sendable {
 		guard connection.query(statement: sql) else {
 			throw MySQLCRUDError("Error executing statement. \(connection.errorMessage())")
 		}
+		// Read every result (multi-statement text can produce several) so the connection is
+		// never left "out of sync", and report errors from any of them.
+		var returnedRows = false
+		while true {
+			if connection.storeResults() != nil {
+				returnedRows = true
+			} else if connection.errorCode() != 0 {
+				throw MySQLCRUDError("Error reading results. \(connection.errorMessage())")
+			}
+			let next = connection.nextResult()
+			if next > 0 {
+				throw MySQLCRUDError("Error executing statement. \(connection.errorMessage())")
+			}
+			if next < 0 {
+				break
+			}
+		}
+		// This path can't decode text-protocol rows into Codable values. Failing beats silently
+		// returning nothing, e.g. for CHECK TABLE, which reports problems as rows.
+		if returnedRows {
+			throw MySQLCRUDError("This statement returns rows but MySQL can't prepare it, so PerfectCRUD can't read them. Run it with MySQL.query(statement:) and MySQL.storeResults().")
+		}
 		return false
 	}
 	func next<A>() throws -> KeyedDecodingContainer<A>? where A : CodingKey {
@@ -627,13 +649,40 @@ public struct MySQLDatabaseConfiguration: DatabaseConfigurationProtocol, @unchec
 		return MySQLGenDelegate(connection: connection)
 	}
 	
+	/// Statements run without preparing, matched on their first keyword regardless of case.
+	/// MySQL can't prepare BEGIN/START TRANSACTION, SAVEPOINT, RELEASE SAVEPOINT, ROLLBACK TO
+	/// SAVEPOINT, LOCK/UNLOCK TABLES or USE (see "SQL Syntax Permitted in Prepared Statements"
+	/// in the MySQL manual); Perfect-CRUD's nested `transaction {}` sends the savepoint ones.
+	/// COMMIT/ROLLBACK can be prepared but take no parameters, so running them directly is fine.
+	/// Anything else MySQL refuses to prepare falls back to direct execution (error 1295).
+	static let directStatements: Set<String> = [
+		"BEGIN", "START", "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE",
+		"LOCK", "UNLOCK", "USE",
+	]
+
+	/// DDL prefixes that were always run directly, matched case-sensitively as before. MySQL can
+	/// prepare most DDL, so lowercase DDL (which may carry `?` bindings) stays prepared.
+	static let directDDLPrefixes = ["CREATE", "DROP", "ALTER"]
+
+	/// ER_UNSUPPORTED_PS: "This command is not supported in the prepared statement protocol yet".
+	static let unsupportedPreparedStatementError: UInt32 = 1295
+
+	/// The statement's first keyword, uppercased, ignoring leading whitespace.
+	static func firstKeyword(_ sql: String) -> String {
+		sql.drop(while: { $0.isWhitespace }).prefix(while: { $0.isLetter }).uppercased()
+	}
+
 	public func sqlExeDelegate(forSQL: String) throws -> SQLExeDelegate {
-		let noPrepCommands = ["CREATE", "DROP", "ALTER", "BEGIN", "COMMIT", "ROLLBACK"]
-		if nil != noPrepCommands.first(where: { forSQL.hasPrefix($0) }) {
+		if Self.directStatements.contains(Self.firstKeyword(forSQL))
+			|| Self.directDDLPrefixes.contains(where: { forSQL.hasPrefix($0) }) {
 			return MySQLDirectExeDelegate(connection: connection, sql: forSQL)
 		}
 		let stat = MySQLStmt(connection)
 		guard stat.prepare(statement: forSQL) else {
+			// Anything else the server refuses to prepare still runs, directly.
+			if stat.errorCode() == Self.unsupportedPreparedStatementError {
+				return MySQLDirectExeDelegate(connection: connection, sql: forSQL)
+			}
 			throw MySQLCRUDError("Could not prepare statement. \(stat.errorMessage())")
 		}
 		return MySQLStmtExeDelegate(connection: connection, stat: stat)
