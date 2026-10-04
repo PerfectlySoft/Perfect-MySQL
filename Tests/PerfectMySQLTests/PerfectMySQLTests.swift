@@ -386,8 +386,8 @@ class PerfectMySQLTests: XCTestCase {
 				XCTAssertEqual(e[24] as? String, "1")
 				XCTAssertEqual(e[25] as? String, "2")
 				XCTAssertEqual(e[26] as? Int8, 1)
-				XCTAssertEqual(e[27] as? String, "1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0")
-				XCTAssertEqual(e[28] as? String, "1")
+				XCTAssertEqual(e[27] as? [UInt8], [0x31] + [UInt8](repeating: 0, count: 19))
+				XCTAssertEqual(e[28] as? [UInt8], [0x31])
 			}
 			XCTAssert(ok, stmt1.errorMessage())
 		}
