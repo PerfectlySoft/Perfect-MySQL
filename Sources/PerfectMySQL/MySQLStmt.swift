@@ -40,17 +40,15 @@ public final class MySQLStmt: @unchecked Sendable {
 		guard columnCount > 0 else {
 			return [:]
 		}
-		// Use the metadata cached by prepare(); calling mysql_stmt_result_metadata on every call
-		// allocated a new MYSQL_RES each time and never freed it. Some statements (CALL) only
-		// have metadata after execute(), so fetch it then and cache it; deinit frees it.
-		if meta == nil {
-			meta = mysql_stmt_result_metadata(ptr)
-		}
+		// Use the cached metadata; calling mysql_stmt_result_metadata on every call allocated a
+		// new MYSQL_RES each time and never freed it. Refresh it when it's missing (CALL only has
+		// metadata after execute()) or describes a different result set (after nextResult()).
+		refreshMetadataIfStale()
 		guard let meta, let fields = mysql_fetch_fields(meta) else {
 			return [:]
 		}
 		var fieldDictionary = [Int: String]()
-		for i in 0..<columnCount {
+		for i in 0..<min(columnCount, Int(mysql_num_fields(meta))) {
 			fieldDictionary[i] = String(cString: fields[i].name)
 		}
 		return fieldDictionary
@@ -277,8 +275,27 @@ public final class MySQLStmt: @unchecked Sendable {
 	
 	/// Returns/initiates the next result in a multiple-result execution
 	public func nextResult() -> Int {
-		let r = mysql_stmt_next_result(ptr)
-		return Int(r)
+		let r = Int(mysql_stmt_next_result(ptr))
+		if r == 0 {
+			// A new result set: drop the previous one's metadata so it's fetched afresh.
+			if let m = meta {
+				mysql_free_result(m)
+			}
+			meta = nil
+		}
+		return r
+	}
+
+	/// Fetches result metadata if there is none cached, or if the cached metadata's column count
+	/// doesn't match the current result set's. deinit frees it.
+	func refreshMetadataIfStale() {
+		if let m = meta, Int(mysql_num_fields(m)) != Int(fieldCount()) {
+			mysql_free_result(m)
+			meta = nil
+		}
+		if meta == nil {
+			meta = mysql_stmt_result_metadata(ptr)
+		}
 	}
 	
 	/// Seeks to an arbitrary row number in a statement result set
@@ -520,6 +537,9 @@ public final class MySQLStmt: @unchecked Sendable {
 		
 		init(_ s: MySQLStmt) {
 			stmt = s
+			// bind() reads stmt.meta; make sure it describes this result set (CALL has none
+			// until execute(), and it changes after nextResult()).
+			s.refreshMetadataIfStale()
 			numFields = Int(stmt.fieldCount())
 			binds = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: numFields)
 			lengthBuffers = UnsafeMutablePointer<UInt>.allocate(capacity: numFields)
