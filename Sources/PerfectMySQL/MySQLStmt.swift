@@ -40,8 +40,12 @@ public final class MySQLStmt: @unchecked Sendable {
 		guard columnCount > 0 else {
 			return [:]
 		}
-		// Use the metadata cached by prepare(); calling mysql_stmt_result_metadata here
-		// allocated a new MYSQL_RES on every call and never freed it.
+		// Use the metadata cached by prepare(); calling mysql_stmt_result_metadata on every call
+		// allocated a new MYSQL_RES each time and never freed it. Some statements (CALL) only
+		// have metadata after execute(), so fetch it then and cache it; deinit frees it.
+		if meta == nil {
+			meta = mysql_stmt_result_metadata(ptr)
+		}
 		guard let meta, let fields = mysql_fetch_fields(meta) else {
 			return [:]
 		}
