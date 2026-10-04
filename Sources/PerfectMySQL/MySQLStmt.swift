@@ -106,7 +106,11 @@ public final class MySQLStmt: @unchecked Sendable {
 		case MYSQL_TYPE_TINY_BLOB,
 			 MYSQL_TYPE_MEDIUM_BLOB,
 			 MYSQL_TYPE_LONG_BLOB,
-			 MYSQL_TYPE_BLOB:
+			 MYSQL_TYPE_BLOB,
+			 // BINARY / VARBINARY report as (VAR_)STRING with the binary charset.
+			 MYSQL_TYPE_STRING,
+			 MYSQL_TYPE_VAR_STRING,
+			 MYSQL_TYPE_VARCHAR:
 			if field.pointee.charsetnr == 63 /* binary */ {
 				return .bytes
 			}
@@ -611,7 +615,11 @@ public final class MySQLStmt: @unchecked Sendable {
 			case MYSQL_TYPE_TINY_BLOB,
 				 MYSQL_TYPE_MEDIUM_BLOB,
 				 MYSQL_TYPE_LONG_BLOB,
-				 MYSQL_TYPE_BLOB:
+				 MYSQL_TYPE_BLOB,
+				 // BINARY / VARBINARY report as (VAR_)STRING with the binary charset.
+				 MYSQL_TYPE_STRING,
+				 MYSQL_TYPE_VAR_STRING,
+				 MYSQL_TYPE_VARCHAR:
 				if field.pointee.charsetnr == 63 /* binary */ {
 					return .bytes(type)
 				}
