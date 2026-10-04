@@ -129,6 +129,34 @@ final class DirectStatementTests: XCTestCase {
 		}
 	}
 
+	func testFieldNamesFollowEachResultSet() throws {
+		guard mysqlTests else { return }
+		let mysql = rawMySQL
+		XCTAssertTrue(mysql.query(statement: "DROP PROCEDURE IF EXISTS direct_two_sets"), mysql.errorMessage())
+		XCTAssertTrue(mysql.query(statement: "CREATE PROCEDURE direct_two_sets() BEGIN SELECT 1 AS a; SELECT 1 AS b, 2 AS c, 3 AS d; END"), mysql.errorMessage())
+		let call = MySQLStmt(mysql)
+		XCTAssertTrue(call.prepare(statement: "CALL direct_two_sets()"), call.errorMessage())
+		XCTAssertTrue(call.execute(), call.errorMessage())
+		XCTAssertEqual(call.fieldNames(), [0: "a"])
+		call.freeResult()
+		XCTAssertEqual(call.nextResult(), 0)
+		// Reading the second set's names through the first set's metadata read out of bounds.
+		XCTAssertEqual(call.fieldNames(), [0: "b", 1: "c", 2: "d"])
+	}
+
+	func testResultsOfCallWithoutFieldNamesFirst() throws {
+		guard mysqlTests else { return }
+		let mysql = rawMySQL
+		XCTAssertTrue(mysql.query(statement: "DROP PROCEDURE IF EXISTS direct_proc_value"), mysql.errorMessage())
+		XCTAssertTrue(mysql.query(statement: "CREATE PROCEDURE direct_proc_value() SELECT 6 * 7 AS v"), mysql.errorMessage())
+		let call = MySQLStmt(mysql)
+		XCTAssertTrue(call.prepare(statement: "CALL direct_proc_value()"), call.errorMessage())
+		XCTAssertTrue(call.execute(), call.errorMessage())
+		var value: Any?
+		_ = call.results().forEachRow { row in value = row.first ?? nil }
+		XCTAssertEqual(value.map { "\($0)" }, "42")
+	}
+
 	func testStatementKeepsItsConnectionAlive() throws {
 		guard mysqlTests else { return }
 		// `rawMySQL` makes a new connection; nothing else holds it once the statement exists.
