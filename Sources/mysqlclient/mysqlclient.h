@@ -1,6 +1,12 @@
 #include <mysql.h>
-// MySQL 8.0+ removed the my_bool typedef; provide a compat shim so existing
-// code that uses my_bool as a byte-sized nullable flag continues to work.
-#ifndef my_bool
+
+#if defined(LIBMARIADB) || defined(MARIADB_BASE_VERSION)
+// MariaDB Connector/C (also what Debian ships as "mysqlclient"). It has no MYSQL_OPT_SSL_MODE,
+// so give that name a value libmariadb doesn't recognise: setting it then fails at runtime
+// (MySQL.setOption returns false) instead of breaking the build. MariaDB already defines my_bool.
+static const enum mysql_option MYSQL_OPT_SSL_MODE = (enum mysql_option)0x7FFF;
+#elif defined(MYSQL_VERSION_ID) && MYSQL_VERSION_ID >= 80000
+// MySQL 8.0 removed the my_bool typedef (MySQL 5.7 still defines it). `#ifndef my_bool`
+// can't detect a typedef, so key off the version instead.
 typedef signed char my_bool;
 #endif

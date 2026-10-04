@@ -416,6 +416,8 @@ struct MySQLDirectExeDelegate: SQLExeDelegate, Sendable {
 		guard connection.query(statement: sql) else {
 			throw MySQLCRUDError("Error executing statement. \(connection.errorMessage())")
 		}
+		// Discard any result set so the connection isn't left "out of sync".
+		_ = connection.storeResults()
 		return false
 	}
 	func next<A>() throws -> KeyedDecodingContainer<A>? where A : CodingKey {
@@ -627,13 +629,34 @@ public struct MySQLDatabaseConfiguration: DatabaseConfigurationProtocol, @unchec
 		return MySQLGenDelegate(connection: connection)
 	}
 	
+	/// Statements run without preparing. MySQL can't prepare transaction control
+	/// (BEGIN/START TRANSACTION, SAVEPOINT, RELEASE SAVEPOINT), LOCK/UNLOCK TABLES or USE;
+	/// see "SQL Syntax Permitted in Prepared Statements" in the MySQL manual. Perfect-CRUD's
+	/// nested `transaction {}` sends SAVEPOINT and RELEASE SAVEPOINT. DDL is run directly too.
+	static let directStatements: Set<String> = [
+		"CREATE", "DROP", "ALTER",
+		"BEGIN", "START", "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE",
+		"LOCK", "UNLOCK", "USE",
+	]
+
+	/// ER_UNSUPPORTED_PS: "This command is not supported in the prepared statement protocol yet".
+	static let unsupportedPreparedStatementError: UInt32 = 1295
+
+	/// The statement's first keyword, uppercased, ignoring leading whitespace.
+	static func firstKeyword(_ sql: String) -> String {
+		sql.drop(while: { $0.isWhitespace }).prefix(while: { $0.isLetter }).uppercased()
+	}
+
 	public func sqlExeDelegate(forSQL: String) throws -> SQLExeDelegate {
-		let noPrepCommands = ["CREATE", "DROP", "ALTER", "BEGIN", "COMMIT", "ROLLBACK"]
-		if nil != noPrepCommands.first(where: { forSQL.hasPrefix($0) }) {
+		if Self.directStatements.contains(Self.firstKeyword(forSQL)) {
 			return MySQLDirectExeDelegate(connection: connection, sql: forSQL)
 		}
 		let stat = MySQLStmt(connection)
 		guard stat.prepare(statement: forSQL) else {
+			// Anything else the server refuses to prepare still runs, directly.
+			if stat.errorCode() == Self.unsupportedPreparedStatementError {
+				return MySQLDirectExeDelegate(connection: connection, sql: forSQL)
+			}
 			throw MySQLCRUDError("Could not prepare statement. \(stat.errorMessage())")
 		}
 		return MySQLStmtExeDelegate(connection: connection, stat: stat)
