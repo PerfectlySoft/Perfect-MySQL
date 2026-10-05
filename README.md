@@ -92,6 +92,22 @@ if let results = mysql.storeResults() {
 }
 ```
 
+### TLS
+
+Set `MYSQL_OPT_SSL_MODE` before connecting, using MySQL's `SSL_MODE_*` values: 1 = DISABLED, 2 = PREFERRED, 3 = REQUIRED, 4 = VERIFY_CA, 5 = VERIFY_IDENTITY. Add `MYSQL_OPT_SSL_CA` to verify the server's certificate.
+
+```swift
+let mysql = MySQL()
+mysql.setOption(.MYSQL_OPT_SSL_CA, "/path/to/ca.pem")
+guard mysql.setOption(.MYSQL_OPT_SSL_MODE, 5) else { fatalError("SSL mode not supported") }
+```
+
+This also works when the package is built against MariaDB Connector/C (Debian's `libmariadb-dev-compat`), which has no `MYSQL_OPT_SSL_MODE`; the modes are mapped onto its own options, with these differences:
+
+- **REQUIRED** is checked only after authenticating: Connector/C doesn't refuse a server without TLS, so `connect()` closes the plaintext connection and fails with error 2026 afterwards. Someone able to tamper with the connection can capture the authentication exchange (or the password, if the server asks for `mysql_clear_password`). Use VERIFY_IDENTITY with `MYSQL_OPT_SSL_CA`, which fails before authenticating. REQUIRED also turns off `MYSQL_OPT_RECONNECT`, since a reconnect could fall back to plaintext.
+- **VERIFY_CA** also checks the host name. Connector/C 3.4 checks neither the host name nor, without `MYSQL_OPT_SSL_CA`, the CA on local (loopback or socket) connections.
+- **DISABLED** still uses TLS if any `MYSQL_OPT_SSL_*` file or cipher option is set.
+
 ### PerfectCRUD Integration
 
 `MySQLDatabaseConfiguration` conforms to `DatabaseConfigurationProtocol` and `Sendable`, so it works directly with PerfectCRUD's `Database` and with PerfectNIO's `Routes.db()` helper.
