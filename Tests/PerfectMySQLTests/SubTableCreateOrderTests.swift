@@ -177,6 +177,32 @@ struct SubTableCreateOrderLiveTests {
 	}
 
 	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
+	func reconcileDropsARemovedForeignKeyColumn() throws {
+		let db = try freshDatabase()
+		defer { try? dropSchema() }
+
+		try db.create(OrderParent.self, policy: .shallow)
+		try db.create(OrderPet.self, policy: .shallow)
+		try db.create(LinkedRowV1.self)
+		try db.table(OrderParent.self).insert(OrderParent(id: 1, name: "a", children: nil))
+		try db.table(OrderPet.self).insert(OrderPet(id: 1, ownerId: 1))
+		try db.sql("INSERT INTO `LinkedRow` (`id`, `parentId`, `petId`) VALUES (1, 1, 1)")
+
+		// The model no longer has `parentId`: the column goes, with its constraint.
+		try db.create(LinkedRowV2.self, policy: .reconcileTable)
+		let columns = try db.sql("SHOW COLUMNS FROM `LinkedRow`", ColumnName.self).map(\.Field)
+		#expect(columns == ["id", "petId"])
+		let row = try #require(try db.table(LinkedRowV2.self).where(\LinkedRowV2.id == 1).first())
+		#expect(row.petId == 1)
+		// The parent row is no longer referenced, so it can be deleted.
+		try db.table(OrderParent.self).where(\OrderParent.id == 1).delete()
+		// `petId` keeps its constraint: an unknown pet is still rejected.
+		#expect(throws: (any Error).self) {
+			try db.sql("INSERT INTO `LinkedRow` (`id`, `petId`) VALUES (2, 99)")
+		}
+	}
+
+	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
 	func reconcileKeepsMixedCaseColumns() throws {
 		let db = try freshDatabase()
 		defer { try? dropSchema() }
@@ -201,4 +227,21 @@ private struct ReconcileRow: Codable {
 
 private struct ColumnName: Codable {
 	let Field: String
+}
+
+// Two versions of one table: V2 drops the `parentId` foreign key column.
+private struct LinkedRowV1: Codable, TableNameProvider {
+	static let tableName = "LinkedRow"
+	let id: Int
+	@ForeignKey(OrderParent.self, onDelete: restrict, onUpdate: restrict)
+	var parentId: Int?
+	@ForeignKey(OrderPet.self, onDelete: restrict, onUpdate: restrict)
+	var petId: Int?
+}
+
+private struct LinkedRowV2: Codable, TableNameProvider {
+	static let tableName = "LinkedRow"
+	let id: Int
+	@ForeignKey(OrderPet.self, onDelete: restrict, onUpdate: restrict)
+	var petId: Int?
 }
