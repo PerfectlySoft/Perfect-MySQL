@@ -62,13 +62,6 @@ var rawMySQL: MySQL {
 }
 
 class PerfectMySQLTests: XCTestCase {
-	override func setUp() {
-		super.setUp()
-		// PerfectCRUD caches table structures by unqualified type name, so test-local
-		// types that share a name (e.g. `Me`, `Top`) would otherwise reuse another
-		// test's columns.
-		CRUDClearTableStructureCache()
-	}
 	override func tearDown() {
 		CRUDLogging.flush()
 		super.tearDown()
