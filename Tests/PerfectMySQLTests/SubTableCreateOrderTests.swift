@@ -107,24 +107,18 @@ struct SubTableCreateOrderLiveTests {
 	static let schema = "perfect_subtable_order_test"
 
 	private func freshDatabase() throws -> Database<MySQLDatabaseConfiguration> {
-		let admin = Database(configuration: try MySQLDatabaseConfiguration(
-			database: testAdminDB, host: testHost, port: testPort,
-			username: testUser, password: testPassword))
+		let admin = Database(configuration: try MySQLTestEnvironment.configuration(database: testAdminDB))
 		try admin.sql("DROP DATABASE IF EXISTS `\(Self.schema)`")
 		try admin.sql("CREATE DATABASE `\(Self.schema)` DEFAULT CHARACTER SET utf8mb4")
-		return Database(configuration: try MySQLDatabaseConfiguration(
-			database: Self.schema, host: testHost, port: testPort,
-			username: testUser, password: testPassword))
+		return Database(configuration: try MySQLTestEnvironment.configuration(database: Self.schema))
 	}
 
 	private func dropSchema() throws {
-		let admin = Database(configuration: try MySQLDatabaseConfiguration(
-			database: testAdminDB, host: testHost, port: testPort,
-			username: testUser, password: testPassword))
+		let admin = Database(configuration: try MySQLTestEnvironment.configuration(database: testAdminDB))
 		try admin.sql("DROP DATABASE IF EXISTS `\(Self.schema)`")
 	}
 
-	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
 	func createParentWithReferencingChildren() throws {
 		let db = try freshDatabase()
 		defer { try? dropSchema() }
@@ -151,7 +145,7 @@ struct SubTableCreateOrderLiveTests {
 		#expect(try db.table(OrderChild.self).count() == 0)
 	}
 
-	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
 	func createParentReferencingASubTable() throws {
 		let db = try freshDatabase()
 		defer { try? dropSchema() }
@@ -163,7 +157,7 @@ struct SubTableCreateOrderLiveTests {
 		#expect(try db.table(OrderOwner.self).count() == 0)
 	}
 
-	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
 	func reconcileAddsForeignKeyConstraint() throws {
 		let db = try freshDatabase()
 		defer { try? dropSchema() }
@@ -184,7 +178,7 @@ struct SubTableCreateOrderLiveTests {
 		#expect(child.parentId == nil)
 	}
 
-	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
 	func reconcileDropsARemovedForeignKeyColumn() throws {
 		let db = try freshDatabase()
 		defer { try? dropSchema() }
@@ -210,7 +204,7 @@ struct SubTableCreateOrderLiveTests {
 		}
 	}
 
-	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
 	func reconcileDropsColumnsSharingAForeignKey() throws {
 		let db = try freshDatabase()
 		defer { try? dropSchema() }
@@ -230,7 +224,7 @@ struct SubTableCreateOrderLiveTests {
 		#expect(try db.table(PairRow.self).count() == 1)
 	}
 
-	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
 	func reconcileKeepsMixedCaseColumns() throws {
 		let db = try freshDatabase()
 		defer { try? dropSchema() }

@@ -11,24 +11,14 @@ private struct FixtureCount: Codable {
 	}
 }
 
+/// The server, user and password come from MySQLTestEnvironment.
 struct MySQLFixtureConfig {
-	let host: String
-	let port: Int?
 	let adminDatabase: String
-	let username: String
-	let password: String
 	let schema: String
 
 	static func fromEnvironment(schemaSuffix: String = UUID().uuidString.replacingOccurrences(of: "-", with: "_")) -> Self {
-		let env = ProcessInfo.processInfo.environment
-		return MySQLFixtureConfig(
-			host: env["MYSQL_TEST_HOST"] ?? testHost,
-			port: env["MYSQL_TEST_PORT"].flatMap(Int.init) ?? testPort,
-			adminDatabase: env["MYSQL_TEST_ADMIN_DATABASE"] ?? testAdminDB,
-			username: env["MYSQL_TEST_USER"] ?? testUser,
-			password: env["MYSQL_TEST_PASSWORD"] ?? testPassword,
-			schema: "\(env["MYSQL_TEST_DATABASE"] ?? "perfect_mysql_fixture")_\(schemaSuffix)"
-		)
+		let prefix = ProcessInfo.processInfo.environment["MYSQL_TEST_DATABASE"] ?? "perfect_mysql_fixture"
+		return MySQLFixtureConfig(adminDatabase: testAdminDB, schema: "\(prefix)_\(schemaSuffix)")
 	}
 }
 
@@ -38,35 +28,17 @@ final class CatalogFixtureDatabase {
 
 	init(config: MySQLFixtureConfig = .fromEnvironment()) throws {
 		self.config = config
-		let admin = try Database(configuration: MySQLDatabaseConfiguration(
-			database: config.adminDatabase,
-			host: config.host,
-			port: config.port,
-			username: config.username,
-			password: config.password
-		))
+		let admin = try Database(configuration: MySQLTestEnvironment.configuration(database: config.adminDatabase))
 		try admin.sql("DROP DATABASE IF EXISTS `\(config.schema)`")
 		try admin.sql("CREATE DATABASE `\(config.schema)` DEFAULT CHARACTER SET utf8mb4")
 
-		database = try Database(configuration: MySQLDatabaseConfiguration(
-			database: config.schema,
-			host: config.host,
-			port: config.port,
-			username: config.username,
-			password: config.password
-		))
+		database = try Database(configuration: MySQLTestEnvironment.configuration(database: config.schema))
 		try loadDump(into: database)
 	}
 
 	deinit {
 		do {
-			let admin = try Database(configuration: MySQLDatabaseConfiguration(
-				database: config.adminDatabase,
-				host: config.host,
-				port: config.port,
-				username: config.username,
-				password: config.password
-			))
+			let admin = try Database(configuration: MySQLTestEnvironment.configuration(database: config.adminDatabase))
 			try admin.sql("DROP DATABASE IF EXISTS `\(config.schema)`")
 		} catch {
 			Issue.record("Could not drop fixture schema \(config.schema): \(error)")
@@ -101,7 +73,7 @@ private extension String {
 }
 
 struct GenericCatalogFixtureTests {
-	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_FIXTURE_TESTS"] == "1"))
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
 	func loadsGenericCatalogCartFixtureAndReadsDynamicRows() throws {
 		let fixture = try CatalogFixtureDatabase()
 		let database = fixture.database

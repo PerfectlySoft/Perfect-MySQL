@@ -11,7 +11,6 @@ import PerfectCRUD
 @testable import PerfectMySQL
 
 final class DirectStatementTests: XCTestCase {
-	var mysqlTests: Bool { ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1" }
 
 	struct Item: Codable, TableNameProvider {
 		static let tableName = "direct_items"
@@ -33,7 +32,7 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testNestedTransactionsUseSavepoints() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let db = try getDB()
 		try db.create(Item.self, policy: .dropTable)
 		let items = db.table(Item.self)
@@ -53,7 +52,7 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testLockAndUnlockTables() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let db = try getDB()
 		try db.create(Item.self, policy: .dropTable)
 		try db.sql("LOCK TABLES direct_items WRITE")
@@ -63,7 +62,7 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testUnpreparableStatementOutsideTheListFallsBackToDirect() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let db = try getDB()
 		// XA isn't in the direct list; the server rejects preparing it with error 1295.
 		try db.sql("XA START 'perfect-direct-test'")
@@ -73,7 +72,7 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testUnpreparableStatementReturningRowsFailsLoudly() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let db = try getDB()
 		// XA RECOVER and CHECK TABLE can't be prepared and return rows that this path can't
 		// decode; they must throw rather than quietly return nothing.
@@ -86,10 +85,9 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testMultiStatementTextIsFullyDrained() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let mysql = MySQL()
-		XCTAssertTrue(mysql.connect(host: testHost, user: testUser, password: testPassword, db: testAdminDB,
-									port: UInt32(testPort ?? 0), flag: 1 << 16), mysql.errorMessage()) // CLIENT_MULTI_STATEMENTS
+		XCTAssertTrue(MySQLTestEnvironment.connect(mysql, database: testAdminDB, flag: 1 << 16), mysql.errorMessage()) // CLIENT_MULTI_STATEMENTS
 		let db = Database(configuration: MySQLDatabaseConfiguration(connection: mysql))
 		XCTAssertThrowsError(try db.sql("UNLOCK TABLES; SELECT 1"))
 		// Without draining every result this fails with "Commands out of sync".
@@ -97,7 +95,7 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testLowercaseDDLWithBindingsIsStillPrepared() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let db = try getDB()
 		try db.sql("drop table if exists direct_ctas")
 		try db.sql("create table direct_ctas as select ? as answer", bindings: [("?", .integer(42))])
@@ -105,7 +103,7 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testFieldNamesForCallAfterExecute() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let mysql = rawMySQL
 		XCTAssertTrue(mysql.query(statement: "DROP PROCEDURE IF EXISTS direct_proc"), mysql.errorMessage())
 		XCTAssertTrue(mysql.query(statement: "CREATE PROCEDURE direct_proc() SELECT 1 AS one"), mysql.errorMessage())
@@ -120,7 +118,7 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testFieldNamesUsesCachedMetadata() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let mysql = rawMySQL
 		let stmt = MySQLStmt(mysql)
 		XCTAssertTrue(stmt.prepare(statement: "SELECT 1 AS one, 'x' AS two"), stmt.errorMessage())
@@ -130,7 +128,7 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testFieldNamesFollowEachResultSet() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let mysql = rawMySQL
 		XCTAssertTrue(mysql.query(statement: "DROP PROCEDURE IF EXISTS direct_two_sets"), mysql.errorMessage())
 		XCTAssertTrue(mysql.query(statement: "CREATE PROCEDURE direct_two_sets() BEGIN SELECT 1 AS a; SELECT 1 AS b, 2 AS c, 3 AS d; END"), mysql.errorMessage())
@@ -145,7 +143,7 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testResultsOfCallWithoutFieldNamesFirst() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let mysql = rawMySQL
 		XCTAssertTrue(mysql.query(statement: "DROP PROCEDURE IF EXISTS direct_proc_value"), mysql.errorMessage())
 		XCTAssertTrue(mysql.query(statement: "CREATE PROCEDURE direct_proc_value() SELECT 6 * 7 AS v"), mysql.errorMessage())
@@ -158,7 +156,7 @@ final class DirectStatementTests: XCTestCase {
 	}
 
 	func testStatementKeepsItsConnectionAlive() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		// `rawMySQL` makes a new connection; nothing else holds it once the statement exists.
 		let stmt = MySQLStmt(rawMySQL)
 		XCTAssertTrue(stmt.prepare(statement: "SELECT 2 + 2"), stmt.errorMessage())

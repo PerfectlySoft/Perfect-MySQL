@@ -214,7 +214,8 @@ installation:
 
 ```bash
 MYSQL_FIXTURE_TESTS=1 \
-MYSQL_TEST_HOST=localhost \
+MYSQL_TEST_HOST=127.0.0.1 \
+MYSQL_TEST_PORT=3307 \
 MYSQL_TEST_DATABASE=perfect_mysql_fixture \
 MYSQL_TEST_USER=perfect_test \
 MYSQL_TEST_PASSWORD='...' \
@@ -231,6 +232,22 @@ and drop schemas matching that prefix, for example `perfect_mysql_fixture_%`.
 The older XCTest integration tests still use `MYSQL_TESTS=1` and the same
 `MYSQL_TEST_*` variables when you explicitly want to run the broader legacy
 connector suite.
+
+These tests drop and recreate databases, so they never assume a server.
+`MYSQL_TEST_PORT` is required (1–65535; there is no fallback to 3306), and
+`MYSQL_TEST_HOST` may not be `localhost` or empty, which libmysql reaches
+through the Unix socket regardless of the port. Without both, the live tests are
+reported as skipped. The tests can't tell whether a valid host and port lead to
+a server you care about, so point them at a disposable one, for example a
+container:
+
+```bash
+container run -d --rm --name perfect-mysql-test --publish 127.0.0.1:3307:3306 \
+  --env MYSQL_ALLOW_EMPTY_PASSWORD=yes docker.io/library/mysql:8.4
+MYSQL_TESTS=1 MYSQL_TEST_PORT=3307 \
+PKG_CONFIG_PATH=/opt/homebrew/opt/mysql-client/lib/pkgconfig \
+swift test
+```
 
 ## Notes on MySQL 8.0
 
