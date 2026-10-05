@@ -81,6 +81,9 @@ public final class MySQLStmt: @unchecked Sendable {
 	}
 	
 	func mysqlTypeToFieldType(_ field: UnsafeMutablePointer<MYSQL_FIELD>) -> FieldType {
+		if mysqlFieldIsBinary(field) {
+			return .bytes
+		}
 		switch field.pointee.type {
 		case MYSQL_TYPE_NULL:
 			return .null
@@ -103,18 +106,6 @@ public final class MySQLStmt: @unchecked Sendable {
 		case MYSQL_TYPE_DECIMAL,
 			 MYSQL_TYPE_NEWDECIMAL:
 			return .string
-		case MYSQL_TYPE_TINY_BLOB,
-			 MYSQL_TYPE_MEDIUM_BLOB,
-			 MYSQL_TYPE_LONG_BLOB,
-			 MYSQL_TYPE_BLOB,
-			 // BINARY / VARBINARY report as (VAR_)STRING with the binary charset.
-			 MYSQL_TYPE_STRING,
-			 MYSQL_TYPE_VAR_STRING,
-			 MYSQL_TYPE_VARCHAR:
-			if field.pointee.charsetnr == 63 /* binary */ {
-				return .bytes
-			}
-			fallthrough
 		default:
 			return .string
 		}
@@ -590,6 +581,9 @@ public final class MySQLStmt: @unchecked Sendable {
 		
 		func mysqlTypeToGeneralType(_ field: UnsafeMutablePointer<MYSQL_FIELD>) -> GeneralType {
 			let type = field.pointee.type
+			if mysqlFieldIsBinary(field) {
+				return .bytes(type)
+			}
 			switch type {
 			case MYSQL_TYPE_NULL:
 				return .null
@@ -612,18 +606,6 @@ public final class MySQLStmt: @unchecked Sendable {
 			case MYSQL_TYPE_DECIMAL,
 				 MYSQL_TYPE_NEWDECIMAL:
 				return .string(type)
-			case MYSQL_TYPE_TINY_BLOB,
-				 MYSQL_TYPE_MEDIUM_BLOB,
-				 MYSQL_TYPE_LONG_BLOB,
-				 MYSQL_TYPE_BLOB,
-				 // BINARY / VARBINARY report as (VAR_)STRING with the binary charset.
-				 MYSQL_TYPE_STRING,
-				 MYSQL_TYPE_VAR_STRING,
-				 MYSQL_TYPE_VARCHAR:
-				if field.pointee.charsetnr == 63 /* binary */ {
-					return .bytes(type)
-				}
-				fallthrough
 			default:
 				return .string(type)
 			}
@@ -744,7 +726,7 @@ public final class MySQLStmt: @unchecked Sendable {
 				guard res == 0 else {
 					return nil
 				}
-				let s = UTF8Encoding.encode(generator: GenerateFromPointer(from: raw, count: length))
+				let s = UTF8Encoding.encode(raw, count: length)
 				return s
 			case .null:
 				return nil
