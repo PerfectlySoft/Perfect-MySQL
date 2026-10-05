@@ -16,10 +16,6 @@ import Foundation
 @testable import PerfectMySQL
 
 final class SSLModeTests: XCTestCase {
-	var mysqlTests: Bool { ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1" }
-	var noTLSPort: Int? { ProcessInfo.processInfo.environment["MYSQL_TEST_NOTLS_PORT"].flatMap(Int.init) }
-	var noTLSHost: String { ProcessInfo.processInfo.environment["MYSQL_TEST_NOTLS_HOST"] ?? testHost }
-
 	// The values of MySQL's enum mysql_ssl_mode (SSL_MODE_DISABLED ... SSL_MODE_VERIFY_IDENTITY).
 	enum Mode: Int, CaseIterable {
 		case disabled = 1, preferred, required, verifyCA, verifyIdentity
@@ -29,7 +25,7 @@ final class SSLModeTests: XCTestCase {
 		get throws { try XCTUnwrap(Bundle.module.url(forResource: "unrelated-ca", withExtension: "pem")).path }
 	}
 
-	private func connect(_ mode: Mode, host: String = testHost, port: Int? = testPort, ca: String? = nil, reconnect: Bool = false) -> MySQL {
+	private func connect(_ mode: Mode, host: String = testHost, port: Int? = MySQLTestEnvironment.port, ca: String? = nil, reconnect: Bool = false) -> MySQL {
 		let mysql = MySQL()
 		mysql.setOption(.MYSQL_OPT_CONNECT_TIMEOUT, 5)
 		if reconnect {
@@ -39,7 +35,7 @@ final class SSLModeTests: XCTestCase {
 			XCTAssertTrue(mysql.setOption(.MYSQL_OPT_SSL_CA, ca))
 		}
 		XCTAssertTrue(mysql.setOption(.MYSQL_OPT_SSL_MODE, mode.rawValue), "setOption(MYSQL_OPT_SSL_MODE, \(mode)) failed: \(mysql.errorMessage())")
-		_ = mysql.connect(host: host, user: testUser, password: testPassword, db: testAdminDB, port: UInt32(port ?? 0))
+		MySQLTestEnvironment.connect(mysql, host: host, port: port, database: testAdminDB)
 		return mysql
 	}
 
@@ -54,7 +50,7 @@ final class SSLModeTests: XCTestCase {
 	}
 
 	func testEncryptedModesUseTLS() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		for mode in [Mode.preferred, .required] {
 			let mysql = connect(mode)
 			XCTAssertEqual(mysql.errorCode(), 0, "\(mode): \(mysql.errorMessage())")
@@ -63,14 +59,14 @@ final class SSLModeTests: XCTestCase {
 	}
 
 	func testDisabledModeUsesPlaintext() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let mysql = connect(.disabled)
 		XCTAssertEqual(mysql.errorCode(), 0, mysql.errorMessage())
 		XCTAssertEqual(cipher(mysql), "")
 	}
 
 	func testVerifyingModesRejectAnUntrustedServer() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		for mode in [Mode.verifyCA, .verifyIdentity] {
 			let mysql = connect(mode, ca: try unrelatedCA)
 			XCTAssertNotEqual(mysql.errorCode(), 0, "\(mode) accepted a certificate the CA didn't sign")
@@ -80,7 +76,8 @@ final class SSLModeTests: XCTestCase {
 
 	func testVerifyingModesRejectASelfSignedServerWithoutCA() throws {
 		// Connector/C 3.4 deliberately skips verification on loopback connections without a CA.
-		guard mysqlTests, !["127.0.0.1", "::1", "localhost"].contains(testHost) else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
+		guard !["127.0.0.1", "::1", "localhost"].contains(testHost) else { throw XCTSkip("needs a non-loopback MYSQL_TEST_HOST") }
 		for mode in [Mode.verifyCA, .verifyIdentity] {
 			let mysql = connect(mode)
 			XCTAssertNotEqual(mysql.errorCode(), 0, "\(mode) accepted a self-signed certificate")
@@ -89,7 +86,8 @@ final class SSLModeTests: XCTestCase {
 	}
 
 	func testRequiredModeTurnsOffReconnectOnMariaDBConnector() throws {
-		guard mysqlTests, MySQL.usesMariaDBConnector else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
+		guard MySQL.usesMariaDBConnector else { throw XCTSkip("only applies to MariaDB Connector/C") }
 		let mysql = connect(.required, reconnect: true)
 		XCTAssertEqual(mysql.errorCode(), 0, mysql.errorMessage())
 		XCTAssertTrue(mysql.query(statement: "SELECT CONNECTION_ID()"), mysql.errorMessage())
@@ -107,7 +105,8 @@ final class SSLModeTests: XCTestCase {
 	}
 
 	func testModesRequiringTLSRefuseAPlaintextServer() throws {
-		guard mysqlTests, let noTLSPort else { return }
+		if let reason = MySQLTestEnvironment.noTLSSkipReason { throw XCTSkip(reason) }
+		let noTLSHost = MySQLTestEnvironment.noTLSHost, noTLSPort = MySQLTestEnvironment.noTLSPort
 		for mode in [Mode.required, .verifyCA, .verifyIdentity] {
 			let mysql = connect(mode, host: noTLSHost, port: noTLSPort)
 			XCTAssertEqual(mysql.errorCode(), 2026 /* CR_SSL_CONNECTION_ERROR */, "\(mode): \(mysql.errorMessage())")
@@ -118,7 +117,7 @@ final class SSLModeTests: XCTestCase {
 		for mode in [Mode.required, .verifyIdentity] {
 			let mysql = connect(mode, host: noTLSHost, port: noTLSPort)
 			XCTAssertEqual(mysql.errorCode(), 2026)
-			XCTAssertFalse(mysql.connect(host: noTLSHost, user: testUser, password: testPassword, port: UInt32(noTLSPort)), "\(mode) retry connected")
+			XCTAssertFalse(MySQLTestEnvironment.connect(mysql, host: noTLSHost, port: noTLSPort), "\(mode) retry connected")
 			XCTAssertEqual(mysql.errorCode(), 2026, "\(mode) retry: \(mysql.errorMessage())")
 			XCTAssertFalse(mysql.ping())
 		}

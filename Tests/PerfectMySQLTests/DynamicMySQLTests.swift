@@ -28,7 +28,7 @@ struct DynamicMySQLTests {
 		}
 	}
 
-	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_FIXTURE_TESTS"] == "1"))
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
 	func selectsDynamicRowsFromMySQL() throws {
 		let fixture = try CatalogFixtureDatabase()
 		let database = fixture.database

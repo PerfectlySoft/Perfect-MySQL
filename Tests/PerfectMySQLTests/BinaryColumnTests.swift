@@ -12,7 +12,6 @@ import PerfectCRUD
 @testable import PerfectMySQL
 
 final class BinaryColumnTests: XCTestCase {
-	var mysqlTests: Bool { ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1" }
 
 	struct BinaryRow: Codable, TableNameProvider {
 		static let tableName = "binary_cols"
@@ -40,7 +39,7 @@ final class BinaryColumnTests: XCTestCase {
 	}
 
 	func testStatementReturnsBinaryColumnsAsBytes() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		_ = try makeTable()
 		let mysql = rawMySQL
 		let stmt = MySQLStmt(mysql)
@@ -63,7 +62,7 @@ final class BinaryColumnTests: XCTestCase {
 	}
 
 	func testQueryResultsExposeBinaryColumnsAsBytes() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		_ = try makeTable()
 		let mysql = rawMySQL
 		XCTAssertTrue(mysql.query(statement: "SELECT id, b, vb, vc, j, cb FROM binary_cols ORDER BY id"), mysql.errorMessage())
@@ -84,7 +83,7 @@ final class BinaryColumnTests: XCTestCase {
 	}
 
 	func testQueryResultsStringsAreNotTruncatedAtInvalidUTF8() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let mysql = rawMySQL
 		XCTAssertTrue(mysql.query(statement: "SELECT X'61FF62' AS v"), mysql.errorMessage())
 		guard let results = mysql.storeResults() else { return XCTFail(mysql.errorMessage()) }
@@ -96,7 +95,7 @@ final class BinaryColumnTests: XCTestCase {
 	}
 
 	func testBitAndGeometryAreBytesOnBothPaths() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let db = try getDB()
 		try db.sql("CREATE TABLE bit_geo (bits BIT(8), g GEOMETRY, e VARBINARY(4))")
 		try db.sql("INSERT INTO bit_geo VALUES (b'10000001', ST_GeomFromText('POINT(1 2)'), X'')")
@@ -124,7 +123,7 @@ final class BinaryColumnTests: XCTestCase {
 	}
 
 	func testCRUDDecodesBinaryColumns() throws {
-		guard mysqlTests else { return }
+		try MySQLTestEnvironment.skipUnlessEnabled()
 		let db = try makeTable()
 		let rows = try db.table(BinaryRow.self).order(by: \.id).select().map { $0 }
 		XCTAssertEqual(rows.count, 2)

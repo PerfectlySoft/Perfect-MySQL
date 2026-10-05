@@ -31,17 +31,11 @@ private final class ForeignKeyFixtureDatabase {
 
 	init(config: MySQLFixtureConfig = .fromEnvironment()) throws {
 		self.config = config
-		let admin = try Database(configuration: MySQLDatabaseConfiguration(
-			database: config.adminDatabase, host: config.host, port: config.port,
-			username: config.username, password: config.password
-		))
+		let admin = try Database(configuration: MySQLTestEnvironment.configuration(database: config.adminDatabase))
 		try admin.sql("DROP DATABASE IF EXISTS `\(config.schema)`")
 		try admin.sql("CREATE DATABASE `\(config.schema)` DEFAULT CHARACTER SET utf8mb4")
 
-		database = try Database(configuration: MySQLDatabaseConfiguration(
-			database: config.schema, host: config.host, port: config.port,
-			username: config.username, password: config.password
-		))
+		database = try Database(configuration: MySQLTestEnvironment.configuration(database: config.schema))
 		// Parent must exist before the child's FOREIGN KEY constraint can
 		// reference it.
 		try database.create(FKLiveParent.self, primaryKey: \FKLiveParent.id, policy: .shallow)
@@ -50,10 +44,7 @@ private final class ForeignKeyFixtureDatabase {
 
 	deinit {
 		do {
-			let admin = try Database(configuration: MySQLDatabaseConfiguration(
-				database: config.adminDatabase, host: config.host, port: config.port,
-				username: config.username, password: config.password
-			))
+			let admin = try Database(configuration: MySQLTestEnvironment.configuration(database: config.adminDatabase))
 			try admin.sql("DROP DATABASE IF EXISTS `\(config.schema)`")
 		} catch {
 			Issue.record("Could not drop fixture schema \(config.schema): \(error)")
@@ -63,7 +54,7 @@ private final class ForeignKeyFixtureDatabase {
 
 struct ForeignKeyLiveIntegrationTests {
 
-	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_FIXTURE_TESTS"] == "1"))
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
 	func onDeleteCascadeActuallyRemovesTheChildRow() throws {
 		let fixture = try ForeignKeyFixtureDatabase()
 		let db = fixture.database
@@ -86,7 +77,7 @@ struct ForeignKeyLiveIntegrationTests {
 		#expect(parentGone.isEmpty)
 	}
 
-	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_FIXTURE_TESTS"] == "1"))
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
 	func insertingAChildWithAnUnknownParentIsRejected() throws {
 		let fixture = try ForeignKeyFixtureDatabase()
 		let db = fixture.database
