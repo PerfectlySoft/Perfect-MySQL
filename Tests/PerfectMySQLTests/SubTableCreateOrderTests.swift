@@ -84,6 +84,14 @@ struct SubTableCreateOrderDDLTests {
 		#expect(!statements[pet].contains("FOREIGN KEY"))
 	}
 
+	@Test("a backtick in an identifier is doubled")
+	func quoteEscapesBackticks() throws {
+		let delegate = MySQLGenDelegate(connection: MySQL())
+		#expect(try delegate.quote(identifier: "plain") == "`plain`")
+		#expect(try delegate.quote(identifier: "a`b") == "`a``b`")
+		#expect(try delegate.quote(identifier: "x` FROM t; --") == "`x`` FROM t; --`")
+	}
+
 	@Test(".shallow creates only the table itself")
 	func shallowSkipsSubTables() throws {
 		let delegate = MySQLGenDelegate(connection: MySQL())
@@ -203,6 +211,26 @@ struct SubTableCreateOrderLiveTests {
 	}
 
 	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
+	func reconcileDropsColumnsSharingAForeignKey() throws {
+		let db = try freshDatabase()
+		defer { try? dropSchema() }
+
+		// A hand-made two-column constraint (CRUD only makes single-column ones), both of whose
+		// columns the model no longer has: the constraint must be dropped exactly once.
+		try db.sql("CREATE TABLE `PairTarget` (`a` bigint, `b` bigint, PRIMARY KEY (`a`, `b`))")
+		try db.sql("""
+			CREATE TABLE `PairRow` (`id` bigint PRIMARY KEY, `pa` bigint, `pb` bigint,
+			CONSTRAINT `pair_fk` FOREIGN KEY (`pa`, `pb`) REFERENCES `PairTarget` (`a`, `b`))
+			""")
+		try db.sql("INSERT INTO `PairTarget` VALUES (1, 2)")
+		try db.sql("INSERT INTO `PairRow` VALUES (1, 1, 2)")
+		try db.create(PairRow.self, policy: .reconcileTable)
+		let columns = try db.sql("SHOW COLUMNS FROM `PairRow`", ColumnName.self).map(\.Field)
+		#expect(columns == ["id"])
+		#expect(try db.table(PairRow.self).count() == 1)
+	}
+
+	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
 	func reconcileKeepsMixedCaseColumns() throws {
 		let db = try freshDatabase()
 		defer { try? dropSchema() }
@@ -244,4 +272,8 @@ private struct LinkedRowV2: Codable, TableNameProvider {
 	let id: Int
 	@ForeignKey(OrderPet.self, onDelete: restrict, onUpdate: restrict)
 	var petId: Int?
+}
+
+private struct PairRow: Codable {
+	let id: Int
 }
