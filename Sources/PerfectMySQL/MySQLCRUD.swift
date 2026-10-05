@@ -241,54 +241,98 @@ class MySQLGenDelegate: SQLGenDelegate, @unchecked Sendable {
 		return "`\(identifier)`"
 	}
 	
+	// A table's FOREIGN KEY constraint needs its target table to exist, and a table can't be
+	// dropped while another table's constraint references it. So the sub-tables aren't simply
+	// emitted before (or after) the table itself: all the tables are put in an order where
+	// each one comes after the tables it references (the parent before a child that
+	// references it, a sub-table before a parent that references it), then they're dropped
+	// in the reverse of that order (`.dropTable`), then created or reconciled in it. A table
+	// referencing itself is fine either way. Two tables referencing each other can't be
+	// created by `create()` at all, so they keep the order they were given in.
 	func getCreateTableSQL(forTable: TableStructure, policy: TableCreatePolicy) throws -> [String] {
-		parentTableStack.append(forTable)
-		defer {
-			parentTableStack.removeLast()
+		var tables: [TableStructure] = []
+		func collect(_ table: TableStructure) {
+			guard !tables.contains(where: { $0.tableName == table.tableName }) else {
+				return
+			}
+			tables.append(table)
+			if !policy.contains(.shallow) {
+				table.subTables.forEach(collect)
+			}
 		}
-		var sub: [String]
-		if !policy.contains(.shallow) {
-			sub = try forTable.subTables.flatMap { try getCreateTableSQL(forTable: $0, policy: policy) }
-		} else {
-			sub = []
+		collect(forTable)
+		var ordered: [TableStructure] = []
+		var remaining = tables
+		while !remaining.isEmpty {
+			let pending = Set(remaining.map(\.tableName))
+			let next = remaining.firstIndex { table in
+				!table.columns.contains { column in
+					column.properties.contains {
+						if case .foreignKey(let target, _, _, _) = $0 {
+							return target != table.tableName && pending.contains(target)
+						}
+						return false
+					}
+				}
+			} ?? remaining.startIndex
+			ordered.append(remaining.remove(at: next))
 		}
+		var sql: [String] = []
 		if policy.contains(.dropTable) {
-			sub += ["DROP TABLE IF EXISTS \(try quote(identifier: forTable.tableName))"]
+			sql += try ordered.reversed().map { "DROP TABLE IF EXISTS \(try quote(identifier: $0.tableName))" }
 		}
+		for table in ordered {
+			parentTableStack.append(table)
+			defer {
+				parentTableStack.removeLast()
+			}
+			sql += try getCreateOrReconcileSQL(forTable: table, policy: policy)
+		}
+		return sql
+	}
+
+	private func getCreateOrReconcileSQL(forTable: TableStructure, policy: TableCreatePolicy) throws -> [String] {
+		// getColumnDefinition(_:) collects the FOREIGN KEY clauses of the columns it's given,
+		// so start each table with none, or one table's clauses end up in the next table's
+		// CREATE.
+		extraCreate = []
 		if !policy.contains(.dropTable),
 			policy.contains(.reconcileTable),
 			let existingColumns = getExistingColumnData(forTable: forTable.tableName) {
-			let existingColumnMap: [String:MySQLColumnInfo] = .init(uniqueKeysWithValues: existingColumns.map { ($0.field, $0) })
+			// MySQL column names are case-insensitive, so both sides are keyed by the lowercased
+			// name. Only the new columns were, so every column with an uppercase letter looked
+			// removed and added: it was dropped, losing its data, and added back empty.
+			let existingColumnMap: [String:MySQLColumnInfo] = .init(uniqueKeysWithValues: existingColumns.map { ($0.field.lowercased(), $0) })
 			let newColumnMap: [String:TableStructure.Column] = .init(uniqueKeysWithValues: forTable.columns.map { ($0.name.lowercased(), $0) })
 			
 			let addColumns = newColumnMap.keys.filter { existingColumnMap[$0] == nil }
-			let removeColumns: [String] = existingColumnMap.keys.filter { newColumnMap[$0] == nil }
+			let removeColumns: [String] = existingColumnMap.filter { newColumnMap[$0.key] == nil }.map { $0.value.field }
 			
-			sub += try removeColumns.map {
+			var sub: [String] = try removeColumns.map {
 				return """
 				ALTER TABLE \(try quote(identifier: forTable.tableName)) DROP COLUMN \(try quote(identifier: $0))
 				"""
 			}
 			sub += try addColumns.compactMap { newColumnMap[$0] }.map {
+				// A new @ForeignKey column gets its constraint in the same statement.
+				extraCreate = []
 				let nameType = try getColumnDefinition($0)
 				return """
-				ALTER TABLE \(try quote(identifier: forTable.tableName)) ADD COLUMN \(nameType)
+				ALTER TABLE \(try quote(identifier: forTable.tableName)) ADD COLUMN \(nameType)\(extraCreate.map { ", ADD \($0)" }.joined())
 				"""
 			}
 			return sub
-		} else {
-			// getColumnDefinition(_:) populates `extraCreate` (FOREIGN KEY
-			// clauses) as a side effect while mapping columns -- must be read
-			// after the map, not before.
-			let columnDefs = try forTable.columns.map { try getColumnDefinition($0) }
-			sub += [
-				"""
-				CREATE TABLE IF NOT EXISTS \(try quote(identifier: forTable.tableName)) (
-				\((columnDefs + extraCreate).joined(separator: ",\n\t"))
-				)
-				"""]
 		}
-		return sub
+		// getColumnDefinition(_:) populates `extraCreate` (FOREIGN KEY
+		// clauses) as a side effect while mapping columns -- must be read
+		// after the map, not before.
+		let columnDefs = try forTable.columns.map { try getColumnDefinition($0) }
+		return [
+			"""
+			CREATE TABLE IF NOT EXISTS \(try quote(identifier: forTable.tableName)) (
+			\((columnDefs + extraCreate).joined(separator: ",\n\t"))
+			)
+			"""]
 	}
 	
 	func getCreateIndexSQL(forTable name: String, on columns: [String], unique: Bool) throws -> [String] {
