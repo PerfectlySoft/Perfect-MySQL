@@ -156,6 +156,27 @@ struct SubTableCreateOrderLiveTests {
 	}
 
 	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
+	func reconcileAddsForeignKeyConstraint() throws {
+		let db = try freshDatabase()
+		defer { try? dropSchema() }
+
+		// OrderChild's table as it was before `parentId` was added to the model.
+		try db.create(OrderParent.self, policy: .shallow)
+		try db.sql("CREATE TABLE `OrderChild` (`id` bigint PRIMARY KEY)")
+		try db.create(OrderParent.self, policy: .reconcileTable)
+
+		// The added column has its FOREIGN KEY constraint: an unknown parent is rejected.
+		#expect(throws: (any Error).self) {
+			try db.table(OrderChild.self).insert(OrderChild(id: 1, parentId: ForeignKey(OrderParent.self, onDelete: setNull, onUpdate: restrict, wrappedValue: 99)))
+		}
+		try db.table(OrderParent.self).insert(OrderParent(id: 1, name: "a", children: nil))
+		try db.table(OrderChild.self).insert(OrderChild(id: 1, parentId: ForeignKey(OrderParent.self, onDelete: setNull, onUpdate: restrict, wrappedValue: 1)))
+		try db.table(OrderParent.self).where(\OrderParent.id == 1).delete()
+		let child = try #require(try db.table(OrderChild.self).where(\OrderChild.id == 1).first())
+		#expect(child.parentId == nil)
+	}
+
+	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
 	func reconcileKeepsMixedCaseColumns() throws {
 		let db = try freshDatabase()
 		defer { try? dropSchema() }
