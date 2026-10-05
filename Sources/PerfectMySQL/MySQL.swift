@@ -20,6 +20,15 @@ public final class MySQL: @unchecked Sendable {
 	}()
 	
 	var mysqlPtr: UnsafeMutablePointer<MYSQL>
+	/// Set when MYSQL_OPT_SSL_MODE asks for TLS on libmariadb, which doesn't enforce it itself.
+	var sslModeRequiresTLS = false
+	/// An error from connect() that libmysqlclient doesn't know about.
+	var connectError: String?
+	/// The options set so far, to set again on a fresh handle after connect() refuses a connection.
+	var appliedOptions: [(MySQLOpt, OptionValue)] = []
+	enum OptionValue {
+		case none, bool(Bool), int(UInt32), string(String)
+	}
 	/// Create mysql server connection and set ptr
 	public init() {
 		_ = MySQL.initOnce
@@ -29,6 +38,9 @@ public final class MySQL: @unchecked Sendable {
 	deinit {
 		mysql_close(mysqlPtr)
 	}
+	
+	/// Whether this build uses MariaDB Connector/C rather than libmysqlclient.
+	static var usesMariaDBConnector: Bool { PERFECT_MYSQL_LIBMARIADB != 0 }
 	
 	/// Returns client info from mysql_get_client_info
 	public static func clientInfo() -> String {
@@ -44,10 +56,17 @@ public final class MySQL: @unchecked Sendable {
 	
 	/// Return mysql error number
 	public func errorCode() -> UInt32 {
-		return mysql_errno(mysqlPtr)
+		let code = mysql_errno(mysqlPtr)
+		if code == 0 && connectError != nil {
+			return 2026 // CR_SSL_CONNECTION_ERROR
+		}
+		return code
 	}
 	/// Return mysql error message
 	public func errorMessage() -> String {
+		if mysql_errno(mysqlPtr) == 0, let connectError {
+			return connectError
+		}
 		return String(validatingCString: mysql_error(mysqlPtr)) ?? ""
 	}
 	
@@ -58,11 +77,33 @@ public final class MySQL: @unchecked Sendable {
 	
 	/// Connects to a MySQL server
 	public func connect(host: String? = nil, user: String? = nil, password: String? = nil, db: String? = nil, port: UInt32 = 0, socket: String? = nil, flag: UInt = 0) -> Bool {
+		connectError = nil
+		if sslModeRequiresTLS {
+			// libmariadb's automatic reconnect would skip the check below.
+			var off = my_bool(0)
+			mysql_options(mysqlPtr, MYSQL_OPT_RECONNECT, &off)
+		}
+		// CLIENT_REMEMBER_OPTIONS: both libraries otherwise reset the options when a connection
+		// fails, so a retry would quietly drop MYSQL_OPT_SSL_MODE (and everything else).
 		let check = mysql_real_connect(mysqlPtr,
 									   host, user, password,
 									   db, port,
-									   socket, flag)
-		return check != nil && check == mysqlPtr
+									   socket, flag | (1 << 31))
+		guard check != nil && check == mysqlPtr else {
+			return false
+		}
+		// libmariadb quietly falls back to plaintext when the server has no TLS. Refuse that
+		// connection, and start a fresh handle with the same options so connect() can be retried.
+		if sslModeRequiresTLS && mysql_get_ssl_cipher(mysqlPtr) == nil {
+			mysql_close(mysqlPtr)
+			mysqlPtr = mysql_init(nil)
+			for (option, value) in appliedOptions {
+				apply(option, value)
+			}
+			connectError = "SSL connection error: SSL is required, but the server does not support it"
+			return false
+		}
+		return true
 	}
 	
 	/// Selects a database
@@ -242,31 +283,71 @@ public final class MySQL: @unchecked Sendable {
 	/// Sets connect options for connect()
 	@discardableResult
 	public func setOption(_ option: MySQLOpt) -> Bool {
-		return mysql_options(mysqlPtr, exposedOptionToMySQLOption(option), nil) == 0
+		return record(option, .none)
 	}
 	
 	/// Sets connect options for connect() with boolean option argument
 	@discardableResult
 	public func setOption(_ option: MySQLOpt, _ b: Bool) -> Bool {
-		var myB = my_bool(b ? 1 : 0)
-		return mysql_options(mysqlPtr, exposedOptionToMySQLOption(option), &myB) == 0
+		return record(option, .bool(b))
 	}
 	
-	/// Sets connect options for connect() with integer option argument
+	/// Sets connect options for connect() with integer option argument.
+	///
+	/// MYSQL_OPT_SSL_MODE takes one of MySQL's SSL_MODE_* values (1 = DISABLED ... 5 = VERIFY_IDENTITY).
+	/// With MariaDB Connector/C, which has no such option, it's mapped onto MYSQL_OPT_SSL_ENFORCE and
+	/// MYSQL_OPT_SSL_VERIFY_SERVER_CERT, with these differences:
+	/// - REQUIRED: libmariadb doesn't refuse a server without TLS, so connect() does, but only after
+	///   authenticating in plaintext. Someone able to tamper with the connection can capture the
+	///   authentication exchange (or the password, if the server asks for mysql_clear_password).
+	///   Use VERIFY_IDENTITY, which fails before authenticating. REQUIRED also turns off
+	///   MYSQL_OPT_RECONNECT, since a reconnect could fall back to plaintext.
+	/// - VERIFY_CA also checks the server's host name, except that Connector/C 3.4 checks neither the
+	///   host name nor (without MYSQL_OPT_SSL_CA) the CA on local connections.
+	/// - DISABLED still uses TLS if MYSQL_OPT_SSL_CA, _CERT, _KEY, _CAPATH or _CIPHER is set.
 	@discardableResult
 	public func setOption(_ option: MySQLOpt, _ i: Int) -> Bool {
-		var myI = UInt32(i)
-		return mysql_options(mysqlPtr, exposedOptionToMySQLOption(option), &myI) == 0
+		guard let myI = UInt32(exactly: i) else {
+			return false
+		}
+		return record(option, .int(myI))
 	}
 	
 	/// Sets connect options for connect() with string option argument
 	@discardableResult
 	public func setOption(_ option: MySQLOpt, _ s: String) -> Bool {
-		var b = false
-		s.withCString { p in
-			b = mysql_options(mysqlPtr, exposedOptionToMySQLOption(option), p) == 0
+		return record(option, .string(s))
+	}
+	
+	private func record(_ option: MySQLOpt, _ value: OptionValue) -> Bool {
+		guard apply(option, value) else {
+			return false
 		}
-		return b
+		appliedOptions.append((option, value))
+		return true
+	}
+	
+	@discardableResult
+	private func apply(_ option: MySQLOpt, _ value: OptionValue) -> Bool {
+		let mysqlOption = exposedOptionToMySQLOption(option)
+		switch value {
+		case .none:
+			return mysql_options(mysqlPtr, mysqlOption, nil) == 0
+		case .bool(let b):
+			var myB = my_bool(b ? 1 : 0)
+			return mysql_options(mysqlPtr, mysqlOption, &myB) == 0
+		case .int(var myI):
+			if option == .MYSQL_OPT_SSL_MODE {
+				guard perfect_mysql_set_ssl_mode(mysqlPtr, myI) == 0 else {
+					return false
+				}
+				sslModeRequiresTLS = PERFECT_MYSQL_LIBMARIADB != 0 && myI >= SSL_MODE_REQUIRED.rawValue
+				return true
+			}
+			return mysql_options(mysqlPtr, mysqlOption, &myI) == 0
+		case .string(let s):
+			return s.withCString { mysql_options(mysqlPtr, mysqlOption, $0) == 0 }
+		}
 	}
 	
 	/// Sets server option (must be set after connect() is called)
