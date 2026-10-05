@@ -307,20 +307,32 @@ public final class MySQL: @unchecked Sendable {
 		
 		/// Fetches the next row from the result set
 		///     returning a String array of column names if row available
+		/// Invalid UTF-8 is replaced with U+FFFD. Use `nextBytes()` for binary columns
+		/// (see `fieldIsBinary(at:)`).
 		/// Returns: optional Element
 		public func next() -> Element? {
+			return nextRow { raw, len in
+				raw.withMemoryRebound(to: UInt8.self, capacity: len) { UTF8Encoding.encode($0, count: len) }
+			}
+		}
+		
+		/// Fetches the next row from the result set as the exact bytes of each column
+		/// (nil for NULL). Advances the same cursor as `next()`.
+		public func nextBytes() -> [[UInt8]?]? {
+			return nextRow { raw, len in
+				raw.withMemoryRebound(to: UInt8.self, capacity: len) { Array(UnsafeBufferPointer(start: $0, count: len)) }
+			}
+		}
+		
+		private func nextRow<T>(_ convert: (UnsafeMutablePointer<CChar>, Int) -> T) -> [T?]? {
 			guard let row = mysql_fetch_row(ptr),
 				let lengths = mysql_fetch_lengths(ptr) else {
 					return nil
 			}
-			var ret: [String?] = []
+			var ret: [T?] = []
 			for fieldIdx in 0..<numFields() {
-				let length = lengths[fieldIdx]
-				let rowVal = row[fieldIdx]
-				let len = Int(length)
-				if let raw = rowVal {
-					let s = raw.withMemoryRebound(to: UInt8.self, capacity: len) { UTF8Encoding.encode(generator: GenerateFromPointer(from: $0, count: len)) }
-					ret.append(s)
+				if let raw = row[fieldIdx] {
+					ret.append(convert(raw, Int(lengths[fieldIdx])))
 				} else {
 					ret.append(nil)
 				}
@@ -328,9 +340,27 @@ public final class MySQL: @unchecked Sendable {
 			return ret
 		}
 		
+		/// True if the column's values are raw bytes: BINARY, VARBINARY, BLOB and other string types in
+		/// the binary character set, plus BIT and GEOMETRY. These are the columns `MySQLStmt` returns as
+		/// `[UInt8]`; read them here with `nextBytes()`, since `next()` can't represent them as text.
+		public func fieldIsBinary(at index: Int) -> Bool {
+			guard index >= 0, index < numFields(),
+				let field = mysql_fetch_field_direct(ptr, UInt32(index)) else {
+				return false
+			}
+			return mysqlFieldIsBinary(field)
+		}
+		
 		/// passes a string array of the column names to the callback provided
 		public func forEachRow(callback: (Element) -> ()) {
 			while let element = next() {
+				callback(element)
+			}
+		}
+		
+		/// passes each remaining row's exact column bytes to the callback provided
+		public func forEachRowBytes(callback: ([[UInt8]?]) -> ()) {
+			while let element = nextBytes() {
 				callback(element)
 			}
 		}
