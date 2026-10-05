@@ -239,8 +239,23 @@ class MySQLGenDelegate: SQLGenDelegate, @unchecked Sendable {
 	
 	// A backtick inside the name is doubled, so a name (such as a Dynamic API table or field
 	// name, or a constraint name read from the server) can't end the quoted identifier early.
+	//
+	// Escaped per Unicode scalar, not with replacingOccurrences: that matches whole
+	// Characters, so a backtick followed by a combining mark (U+0301) would not match and
+	// would reach the SQL unescaped.
+	//
+	// This assumes a utf8mb4 connection (what the database:host: initializers set). Under a
+	// legacy multibyte charset such as gbk or big5, the server can read a UTF-8 byte and the
+	// first backtick as one character, so a caller-supplied connection must not use one.
 	func quote(identifier: String) throws -> String {
-		return "`\(identifier.replacingOccurrences(of: "`", with: "``"))`"
+		var escaped = String.UnicodeScalarView()
+		for scalar in identifier.unicodeScalars {
+			if scalar == "`" {
+				escaped.append(scalar)
+			}
+			escaped.append(scalar)
+		}
+		return "`\(String(escaped))`"
 	}
 	
 	// A table's FOREIGN KEY constraint needs its target table to exist, and a table can't be

@@ -92,6 +92,20 @@ struct SubTableCreateOrderDDLTests {
 		#expect(try delegate.quote(identifier: "x` FROM t; --") == "`x`` FROM t; --`")
 	}
 
+	// replacingOccurrences matches whole Characters, and a backtick followed by a combining
+	// mark or variation selector is one Character with it, so it wasn't doubled; MySQL
+	// tokenizes bytes, so that bare backtick ended the identifier.
+	@Test("a backtick inside a grapheme cluster is still doubled")
+	func quoteEscapesBackticksPerScalar() throws {
+		let delegate = MySQLGenDelegate(connection: MySQL())
+		for name in ["plain", "a`b", "`", "", "a`\u{301}b", "`\u{301}", "a`\u{FE0F}b", "a`\u{200D}b", "\u{600}`x", "x`\u{301} --"] {
+			let quoted = try delegate.quote(identifier: name)
+			let inner = name.unicodeScalars.filter { $0 == "`" }.count
+			#expect(quoted.utf8.filter { $0 == UInt8(ascii: "`") }.count == 2 + 2 * inner, "\(name.unicodeScalars.map { $0.value })")
+		}
+		#expect(try delegate.quote(identifier: "a`\u{301}b") == "`a``\u{301}b`")
+	}
+
 	@Test(".shallow creates only the table itself")
 	func shallowSkipsSubTables() throws {
 		let delegate = MySQLGenDelegate(connection: MySQL())
@@ -116,6 +130,38 @@ struct SubTableCreateOrderLiveTests {
 	private func dropSchema() throws {
 		let admin = Database(configuration: try MySQLTestEnvironment.configuration(database: testAdminDB))
 		try admin.sql("DROP DATABASE IF EXISTS `\(Self.schema)`")
+	}
+
+	// The Dynamic API passes a caller's table name through quote(identifier:). Before the
+	// backticks were doubled per scalar, a backtick followed by a combining mark (or variation
+	// selector) wasn't doubled, so this name closed the identifier: the mark became a table
+	// alias, `WHERE ? OR 1 = 1` took the predicate's binding and `#` commented out the real
+	// WHERE, so every row was deleted.
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
+	func dynamicTableNameCannotInjectSQL() throws {
+		struct Count: Codable { let c: Int }
+		let db = try freshDatabase()
+		defer { try? dropSchema() }
+		func count(_ table: String) throws -> Int {
+			try db.sql("SELECT COUNT(*) AS c FROM \(table)", Count.self)[0].c
+		}
+		try db.sql("CREATE TABLE `quote_victim` (`id` INT PRIMARY KEY)")
+		for mark in ["\u{301}", "\u{FE0F}"] {
+			try db.sql("DELETE FROM `quote_victim`")
+			try db.sql("INSERT INTO `quote_victim` (`id`) VALUES (1), (2), (3)")
+			_ = try? db.mutate(DynamicMutation(
+				action: .delete, table: "quote_victim`\(mark) WHERE ? OR 1 = 1 #",
+				predicates: [.init(field: "id", comparison: .equal, value: .int(1))]))
+			#expect(try count("`quote_victim`") == 3, "\(mark.unicodeScalars.map { $0.value })")
+		}
+		// The same name is one identifier when a table by that name exists.
+		try db.sql("CREATE TABLE `quote_victim``\u{301} #` (`id` INT PRIMARY KEY)")
+		try db.sql("INSERT INTO `quote_victim``\u{301} #` (`id`) VALUES (1), (2)")
+		_ = try db.mutate(DynamicMutation(
+			action: .delete, table: "quote_victim`\u{301} #",
+			predicates: [.init(field: "id", comparison: .equal, value: .int(1))]))
+		#expect(try count("`quote_victim``\u{301} #`") == 1)
+		#expect(try count("`quote_victim`") == 3)
 	}
 
 	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
