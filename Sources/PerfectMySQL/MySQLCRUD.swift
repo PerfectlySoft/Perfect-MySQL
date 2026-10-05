@@ -299,11 +299,14 @@ class MySQLGenDelegate: SQLGenDelegate, @unchecked Sendable {
 		if !policy.contains(.dropTable),
 			policy.contains(.reconcileTable),
 			let existingColumns = getExistingColumnData(forTable: forTable.tableName) {
-			let existingColumnMap: [String:MySQLColumnInfo] = .init(uniqueKeysWithValues: existingColumns.map { ($0.field, $0) })
+			// MySQL column names are case-insensitive, so both sides are keyed by the lowercased
+			// name. Only the new columns were, so every column with an uppercase letter looked
+			// removed and added: it was dropped, losing its data, and added back empty.
+			let existingColumnMap: [String:MySQLColumnInfo] = .init(uniqueKeysWithValues: existingColumns.map { ($0.field.lowercased(), $0) })
 			let newColumnMap: [String:TableStructure.Column] = .init(uniqueKeysWithValues: forTable.columns.map { ($0.name.lowercased(), $0) })
 			
 			let addColumns = newColumnMap.keys.filter { existingColumnMap[$0] == nil }
-			let removeColumns: [String] = existingColumnMap.keys.filter { newColumnMap[$0] == nil }
+			let removeColumns: [String] = existingColumnMap.filter { newColumnMap[$0.key] == nil }.map { $0.value.field }
 			
 			var sub: [String] = try removeColumns.map {
 				return """

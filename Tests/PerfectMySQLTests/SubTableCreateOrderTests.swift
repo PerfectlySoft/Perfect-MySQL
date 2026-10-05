@@ -130,8 +130,10 @@ struct SubTableCreateOrderLiveTests {
 		let child = try #require(try db.table(OrderChild.self).where(\OrderChild.id == 1).first())
 		#expect(child.parentId == nil)
 
-		// Creating again over the existing tables works too.
+		// Creating again over the existing tables, then reconciling them, works too.
 		try db.create(OrderParent.self)
+		try db.create(OrderParent.self, policy: .reconcileTable)
+		#expect(try db.table(OrderChild.self).count() == 1)
 
 		// Dropping and recreating has to drop the child before the parent it references.
 		try db.table(OrderParent.self).insert(OrderParent(id: 2, name: "b", children: nil))
@@ -152,4 +154,30 @@ struct SubTableCreateOrderLiveTests {
 		try db.create(OrderOwner.self, policy: .dropTable)
 		#expect(try db.table(OrderOwner.self).count() == 0)
 	}
+
+	@Test(.enabled(if: ProcessInfo.processInfo.environment["MYSQL_TESTS"] == "1"))
+	func reconcileKeepsMixedCaseColumns() throws {
+		let db = try freshDatabase()
+		defer { try? dropSchema() }
+
+		try db.create(ReconcileRow.self)
+		try db.table(ReconcileRow.self).insert(ReconcileRow(id: 1, camelName: "kept"))
+		try db.sql("ALTER TABLE `ReconcileRow` ADD COLUMN `OldColumn` bigint")
+		try db.create(ReconcileRow.self, policy: .reconcileTable)
+
+		let row = try #require(try db.table(ReconcileRow.self).where(\ReconcileRow.id == 1).first())
+		#expect(row.camelName == "kept")
+		// A column the model no longer has is still dropped, whatever its case.
+		let columns = try db.sql("SHOW COLUMNS FROM `ReconcileRow`", ColumnName.self).map(\.Field)
+		#expect(columns == ["id", "camelName"])
+	}
+}
+
+private struct ReconcileRow: Codable {
+	let id: Int
+	var camelName: String
+}
+
+private struct ColumnName: Codable {
+	let Field: String
 }
