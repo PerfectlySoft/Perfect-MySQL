@@ -54,3 +54,39 @@ struct ResultErrorTests {
 		#expect(rows == 0)
 	}
 }
+
+/// The parameter bind array is freed whenever it exists. clearBinds() (also called from deinit)
+/// used to free it only when binds were pending, but reset() clears them, so every
+/// parameterized statement that ran leaked its array, as did one prepared twice.
+struct ParameterBindTests {
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
+	func clearBindsFreesTheArrayAfterReset() throws {
+		let mysql = MySQL()
+		try #require(MySQLTestEnvironment.connect(mysql, database: testAdminDB))
+		let stmt = MySQLStmt(mysql)
+		try #require(stmt.prepare(statement: "SELECT ? + ?"))
+		#expect(stmt.paramBinds != nil)
+		stmt.bindParam(1)
+		stmt.bindParam(2)
+		#expect(stmt.execute())
+		_ = stmt.results().next()
+		stmt.reset()
+		stmt.clearBinds()
+		#expect(stmt.paramBinds == nil)
+	}
+
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
+	func preparingAgainReplacesTheArray() throws {
+		let mysql = MySQL()
+		try #require(MySQLTestEnvironment.connect(mysql, database: testAdminDB))
+		let stmt = MySQLStmt(mysql)
+		try #require(stmt.prepare(statement: "SELECT ?"))
+		stmt.bindParam(1)
+		try #require(stmt.prepare(statement: "SELECT CAST(? + ? + ? AS SIGNED)"))
+		stmt.bindParam(1)
+		stmt.bindParam(2)
+		stmt.bindParam(3)
+		#expect(stmt.execute(), "\(stmt.errorMessage())")
+		#expect(stmt.results().next()?.first as? Int64 == 6)
+	}
+}

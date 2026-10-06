@@ -17,7 +17,7 @@ public final class MySQLStmt: @unchecked Sendable {
 	private let ptr: UnsafeMutablePointer<MYSQL_STMT>
 	/// Keeps the connection alive for as long as the statement: `ptr` belongs to it.
 	private let connection: MySQL
-	private var paramBinds: UnsafeMutablePointer<MYSQL_BIND>?
+	private(set) var paramBinds: UnsafeMutablePointer<MYSQL_BIND>?
 	private var paramBindsOffset = 0
 	var meta: UnsafeMutablePointer<MYSQL_RES>?
 	
@@ -163,13 +163,12 @@ public final class MySQLStmt: @unchecked Sendable {
 	}
 	
 	public func clearBinds() {
-		let count = paramBindsOffset
-		if count > 0, nil != paramBinds {
-			resetBinds()
-			paramBinds?.deallocate()
-			paramBinds = nil
-			paramBindsOffset = 0
-		}
+		// reset() already zeroes paramBindsOffset, so the array must be freed whatever the offset;
+		// checking it leaked one array per parameterized statement.
+		resetBinds()
+		paramBinds?.deallocate()
+		paramBinds = nil
+		paramBindsOffset = 0
 	}
 	
 	/// Free the resources allocated to a statement handle
@@ -198,6 +197,7 @@ public final class MySQLStmt: @unchecked Sendable {
 			mysql_free_result(m)
 		}
 		meta = mysql_stmt_result_metadata(ptr)
+		clearBinds() // a statement prepared again would otherwise leak the previous array
 		let count = paramCount()
 		if count > 0 {
 			paramBinds = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: count)
