@@ -281,6 +281,19 @@ public final class MySQLStmt: @unchecked Sendable {
 		return r
 	}
 
+	/// Reads and discards the current result set and any that follow (a CALL returns its rows
+	/// and then a status result), so the connection can run the next statement instead of
+	/// failing with "Commands out of sync".
+	func discardRemainingResults() {
+		mysql_stmt_free_result(ptr)
+		while nextResult() == 0 {
+			if fieldCount() > 0 {
+				mysql_stmt_store_result(ptr)
+			}
+			mysql_stmt_free_result(ptr)
+		}
+	}
+
 	/// Fetches result metadata if there is none cached, or if the cached metadata's column count
 	/// doesn't match the current result set's. deinit frees it.
 	func refreshMetadataIfStale() {
