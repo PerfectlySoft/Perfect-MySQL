@@ -59,7 +59,16 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol, @unchec
 		return nil != columns[key.stringValue]
 	}
 	func decodeNil(forKey key: Key) throws -> Bool {
-		return nil == column(key)
+		guard let value = column(key) else {
+			return true
+		}
+		// MySQL's zero date ('0000-00-00', '0000-00-00 00:00:00') isn't a date. An optional
+		// property over a date column reads it as nil; a non-optional Date throws.
+		if let text = value as? String, text.hasPrefix("0000-00-00"),
+		   let index = columns[key.stringValue], statement.fieldInfo(index: index)?.type == .date {
+			return true
+		}
+		return false
 	}
 	func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool {
 		return ((column(key) as? Int8) ?? 0) != 0
@@ -153,6 +162,9 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol, @unchec
 			return uuid as! T
 		case .date:
 			guard let str = text(val), let date = Date(fromMysqlFormatted: str) else {
+				if let str = text(val), str.hasPrefix("0000-00-00") {
+					throw CRUDDecoderError("Zero date \(str) for key \(key.stringValue) can't be a Date; use an optional property.")
+				}
 				throw CRUDDecoderError("Invalid Date string \(String(describing: val)).")
 			}
 			return date as! T
@@ -814,26 +826,73 @@ public struct MySQLDatabaseConfiguration: DatabaseConfigurationProtocol, @unchec
 	}
 }
 
+// Perfect-CRUD writes dates as UTC wall-clock text, so they're read back as UTC too. Neither
+// direction depends on the process's time zone.
+private let mysqlUTC = TimeZone(identifier: "UTC")!
+
+private let mysqlUTCCalendar: Calendar = {
+	var calendar = Calendar(identifier: .gregorian)
+	calendar.timeZone = mysqlUTC
+	return calendar
+}()
+
 extension Date {
 	func mysqlFormatted() -> String {
 		let dateFormatter = DateFormatter()
 		dateFormatter.locale = Locale(identifier: "en_US_POSIX")
-		dateFormatter.timeZone = TimeZone(abbreviation: "GMT")
+		dateFormatter.calendar = mysqlUTCCalendar
+		dateFormatter.timeZone = mysqlUTC
 		dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
 		let ret = dateFormatter.string(from: self)
 		return ret
 	}
 	
+	/// Parses MySQL's DATETIME / TIMESTAMP / DATE text as UTC: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM:SS`,
+	/// optionally with up to six fractional digits. Returns nil for anything else, including the
+	/// zero date and out-of-range parts such as February 30.
 	init?(fromMysqlFormatted string: String) {
-		let dateFormatter = DateFormatter()
-		dateFormatter.locale = Locale(identifier: "en_US_POSIX")
-		dateFormatter.timeZone = TimeZone.current
-		dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-		if let d = dateFormatter.date(from: string) {
-			self = d
-			return
+		let chars = Array(string.utf8)
+		func number(_ range: Range<Int>) -> Int? {
+			guard !range.isEmpty, range.upperBound <= chars.count else {
+				return nil
+			}
+			var value = 0
+			for i in range {
+				guard chars[i] >= 48, chars[i] <= 57 else {
+					return nil
+				}
+				value = value * 10 + Int(chars[i] - 48)
+			}
+			return value
 		}
-		return nil
+		guard chars.count == 10 || (19...26).contains(chars.count),
+			  chars[4] == UInt8(ascii: "-"), chars[7] == UInt8(ascii: "-"),
+			  let year = number(0..<4), let month = number(5..<7), let day = number(8..<10) else {
+			return nil
+		}
+		var components = DateComponents(year: year, month: month, day: day, hour: 0, minute: 0, second: 0)
+		var fraction = 0.0
+		if chars.count >= 19 {
+			guard chars[10] == UInt8(ascii: " ") || chars[10] == UInt8(ascii: "T"),
+				  chars[13] == UInt8(ascii: ":"), chars[16] == UInt8(ascii: ":"),
+				  let hour = number(11..<13), let minute = number(14..<16), let second = number(17..<19) else {
+				return nil
+			}
+			components.hour = hour
+			components.minute = minute
+			components.second = second
+			if chars.count > 19 {
+				guard chars[19] == UInt8(ascii: "."), let digits = number(20..<chars.count) else {
+					return nil
+				}
+				fraction = Double(digits) / pow(10, Double(chars.count - 20))
+			}
+		}
+		guard year >= 1, components.isValidDate(in: mysqlUTCCalendar),
+			  let date = mysqlUTCCalendar.date(from: components) else {
+			return nil
+		}
+		self = date.addingTimeInterval(fraction)
 	}
 }
 
