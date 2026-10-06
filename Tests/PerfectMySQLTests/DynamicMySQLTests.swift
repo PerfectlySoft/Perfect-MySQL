@@ -98,6 +98,32 @@ struct DynamicMySQLTests {
 		#expect(delete.affectedRows == 0)
 	}
 
+	// A statement that returns rows reports how many it returned and no inserted ID, even right
+	// after an INSERT on the same connection (Connector/C's insert ID is the connection's).
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
+	func rowReturningStatementsReportRowCountAndNoInsertedID() throws {
+		let fixture = try CatalogFixtureDatabase()
+		let database = fixture.database
+		try database.sql("CREATE TABLE dyn_counts (id BIGINT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(20))")
+		let insert = try database.execute(DynamicSQL(
+			sql: "INSERT INTO dyn_counts (name) VALUES (?), (?)", bindings: [.string("a"), .string("b")]))
+		#expect(insert.affectedRows == 2)
+		#expect(insert.insertedID == 1)
+
+		let select = try database.execute(DynamicSQL(sql: "SELECT id, name FROM dyn_counts"))
+		#expect(select.rows.count == 2)
+		#expect(select.affectedRows == 2)
+		#expect(select.insertedID == nil)
+
+		let empty = try database.execute(DynamicSQL(sql: "SELECT id FROM dyn_counts WHERE id > 99"))
+		#expect(empty.affectedRows == 0)
+		#expect(empty.insertedID == nil)
+
+		let update = try database.execute(DynamicSQL(sql: "UPDATE dyn_counts SET name = 'z' WHERE id = 1"))
+		#expect(update.affectedRows == 1)
+		#expect(update.insertedID == nil)
+	}
+
 	// DynamicRow lowercases its keys and traps on duplicates (Perfect-CRUD 3.0.0), so columns
 	// whose names differ only by case crashed the process. Same-named columns kept a random one.
 	// The first column of each name now wins, ignoring case.

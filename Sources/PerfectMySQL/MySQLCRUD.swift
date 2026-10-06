@@ -623,10 +623,18 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 			guard statement.execute() else {
 				throw MySQLCRUDError("Error executing statement. \(statement.errorMessage())")
 			}
-			affectedRows = UInt64(statement.affectedRows())
-			insertID = UInt64(statement.insertId())
+			let returnsRows = statement.fieldCount() > 0
+			if !returnsRows {
+				affectedRows = UInt64(statement.affectedRows())
+				insertID = UInt64(statement.insertId())
+			}
 			results = statement.results()
-			buildColumnMaps()
+			if returnsRows {
+				// What libmysqlclient reported for a SELECT: the number of rows it returned.
+				affectedRows = UInt64(statement.numRows())
+				insertID = 0
+				buildColumnMaps()
+			}
 		}
 		if results?.fetchRow() ?? false {
 			return true
