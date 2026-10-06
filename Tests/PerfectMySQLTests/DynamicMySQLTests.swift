@@ -97,4 +97,31 @@ struct DynamicMySQLTests {
 			predicates: [.init(field: "name", comparison: .equal, value: .string("nothing"))]))
 		#expect(delete.affectedRows == 0)
 	}
+
+	// DynamicRow lowercases its keys and traps on duplicates (Perfect-CRUD 3.0.0), so columns
+	// whose names differ only by case crashed the process. Same-named columns kept a random one.
+	// The first column of each name now wins, ignoring case.
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
+	func duplicateColumnNamesKeepTheFirstColumn() throws {
+		let fixture = try CatalogFixtureDatabase()
+		let database = fixture.database
+		let byCase = try database.execute(DynamicSQL(sql: "SELECT 1 AS a, 2 AS A, 3 AS b"))
+		let row = try #require(byCase.rows.first)
+		#expect(row["a"] == .int(1))
+		#expect(row["b"] == .int(3))
+		#expect(row.values.count == 2)
+
+		try database.sql("CREATE TABLE dyn_parent (id BIGINT PRIMARY KEY, Name VARCHAR(20))")
+		try database.sql("CREATE TABLE dyn_child (id BIGINT PRIMARY KEY, name VARCHAR(20))")
+		try database.sql("INSERT INTO dyn_parent VALUES (1, 'parent')")
+		try database.sql("INSERT INTO dyn_child VALUES (2, 'child')")
+		for _ in 0..<5 { // the old column map's order varied from run to run
+			let joined = try database.execute(DynamicSQL(sql: """
+				SELECT p.id, p.Name, c.id, c.name FROM dyn_parent p CROSS JOIN dyn_child c
+				"""))
+			let joinedRow = try #require(joined.rows.first)
+			#expect(joinedRow["id"] == .int(1))
+			#expect(joinedRow["name"] == .string("parent"))
+		}
+	}
 }

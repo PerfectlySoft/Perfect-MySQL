@@ -558,6 +558,8 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 	let statement: MySQLStmt
 	var results: MySQLStmt.Results?
 	let columnMap: MySQLColumnMap
+	/// The columns of a dynamic row, in result order, one per name ignoring case.
+	let dynamicColumns: [(name: String, index: Int)]
 	// Read right after execute(): hasNext() resets the statement once its rows run out, and
 	// MariaDB Connector/C's mysql_stmt_reset sets the affected-row count to -1.
 	private var affectedRows: UInt64 = 0
@@ -565,13 +567,22 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 	init(connection c: MySQL, stat: MySQLStmt) {
 		connection = c
 		statement = stat
+		// When several columns share a name (`a.id, b.id`), the first one wins. This used to
+		// depend on dictionary order. DynamicRow also lowercases its keys and, in Perfect-CRUD
+		// 3.0.0, traps on duplicates, so dynamic rows keep one column per name ignoring case.
 		var m = MySQLColumnMap()
-		let inv = stat.fieldNames()
-		inv.forEach {
-			let (pos, name) = $0
-			m[name] = pos
+		var dynamic: [(name: String, index: Int)] = []
+		var dynamicNames = Set<String>()
+		for (pos, name) in stat.fieldNames().sorted(by: { $0.key < $1.key }) {
+			if m[name] == nil {
+				m[name] = pos
+			}
+			if dynamicNames.insert(name.lowercased()).inserted {
+				dynamic.append((name, pos))
+			}
 		}
 		columnMap = m
+		dynamicColumns = dynamic
 	}
 	
 	func bind(_ bindings: Bindings, skip: Int) throws {
@@ -613,7 +624,7 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 			return nil
 		}
 		var values: [String: DynamicValue] = [:]
-		for (name, index) in columnMap {
+		for (name, index) in dynamicColumns {
 			guard row.indices.contains(index) else {
 				throw MySQLCRUDError("Missing dynamic row value for column \(name).")
 			}
