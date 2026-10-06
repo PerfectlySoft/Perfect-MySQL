@@ -542,6 +542,10 @@ public final class MySQLStmt: @unchecked Sendable {
 		let lengthBuffers: UnsafeMutablePointer<UInt>
 		let isNullBuffers: UnsafeMutablePointer<my_bool>
 		private var closed = false
+		/// True when reading the result failed, for example when a scalar subquery returned more
+		/// than one row partway through (error 1242). `next()` then returns nil; the statement's
+		/// `errorCode()` / `errorMessage()` say why.
+		public private(set) var failed = false
 		
 		init(_ s: MySQLStmt) {
 			stmt = s
@@ -552,7 +556,10 @@ public final class MySQLStmt: @unchecked Sendable {
 			binds = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: numFields)
 			lengthBuffers = UnsafeMutablePointer<UInt>.allocate(capacity: numFields)
 			isNullBuffers = UnsafeMutablePointer<my_bool>.allocate(capacity: numFields)
-			mysql_stmt_store_result(stmt.ptr)
+			// Fetching from a result whose store failed crashes inside libmariadb, so remember it.
+			if numFields > 0 && mysql_stmt_store_result(stmt.ptr) != 0 {
+				failed = true
+			}
 			bind()
 		}
 		
@@ -564,11 +571,16 @@ public final class MySQLStmt: @unchecked Sendable {
 		}
 		
 		public func fetchRow() -> Bool {
-			let fetchRes = mysql_stmt_fetch(stmt.ptr)
-			if fetchRes == MYSQL_NO_DATA || fetchRes == 1 {
+			// No columns: an INSERT, UPDATE etc. has no rows to fetch.
+			guard !failed, numFields > 0 else {
 				return false
 			}
-			return true
+			let fetchRes = mysql_stmt_fetch(stmt.ptr)
+			if fetchRes == 1 {
+				failed = true
+				return false
+			}
+			return fetchRes != MYSQL_NO_DATA
 		}
 		
 		public func currentRow() -> [Any?]? {
@@ -747,11 +759,12 @@ public final class MySQLStmt: @unchecked Sendable {
 		}
 		
 		/// Retrieve and process each row with the provided callback
+		/// Returns false if reading the rows failed partway (see `failed`).
 		public func forEachRow(callback: (Element) -> ()) -> Bool {
 			while let row = next() {
 				callback(row)
 			}
-			return true
+			return !failed
 		}
 		
 		func bindToType(_ type: GeneralType) -> MYSQL_BIND {

@@ -663,10 +663,15 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 		if results?.fetchRow() ?? false {
 			return true
 		}
+		let failed = results?.failed ?? false
+		let error = failed ? "Error reading results. \(statement.errorMessage())" : ""
 		results = nil
 		// Read past any further result sets (a CALL ends with a status result), then reset.
 		statement.discardRemainingResults()
 		statement.reset()
+		if failed {
+			throw MySQLCRUDError(error)
+		}
 		return false
 	}
 	
