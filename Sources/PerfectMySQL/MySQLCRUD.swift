@@ -558,6 +558,10 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 	let statement: MySQLStmt
 	var results: MySQLStmt.Results?
 	let columnMap: MySQLColumnMap
+	// Read right after execute(): hasNext() resets the statement once its rows run out, and
+	// MariaDB Connector/C's mysql_stmt_reset sets the affected-row count to -1.
+	private var affectedRows: UInt64 = 0
+	private var insertID: UInt64 = 0
 	init(connection c: MySQL, stat: MySQLStmt) {
 		connection = c
 		statement = stat
@@ -582,6 +586,8 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 			guard statement.execute() else {
 				throw MySQLCRUDError("Error executing statement. \(statement.errorMessage())")
 			}
+			affectedRows = UInt64(statement.affectedRows())
+			insertID = UInt64(statement.insertId())
 			results = statement.results()
 		}
 		if results?.fetchRow() ?? false {
@@ -617,12 +623,12 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 	}
 
 	func affectedRowCount() -> Int {
-		Int(statement.affectedRows())
+		// (my_ulonglong)-1 means "no count" (an error, or a SELECT before its rows are stored).
+		Int(exactly: affectedRows) ?? 0
 	}
 
 	func lastInsertedID() -> Int64? {
-		let id = statement.insertId()
-		return id == 0 ? nil : Int64(id)
+		insertID == 0 ? nil : Int64(exactly: insertID)
 	}
 
 	private func bindOne(expr: CRUDExpression) throws {
