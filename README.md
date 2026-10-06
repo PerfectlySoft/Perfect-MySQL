@@ -2,7 +2,7 @@
 
 <p align="center">
     <img src="https://img.shields.io/badge/Swift-6.2-orange.svg?style=flat" alt="Swift 6.2">
-    <img src="https://img.shields.io/badge/Platforms-macOS%2012%2B-lightgray.svg?style=flat" alt="Platforms macOS 12+">
+    <img src="https://img.shields.io/badge/Platforms-macOS%2012%2B%20%7C%20Linux-lightgray.svg?style=flat" alt="Platforms macOS 12+ | Linux">
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-lightgrey.svg?style=flat" alt="License Apache 2.0"></a>
 </p>
 
@@ -15,14 +15,14 @@ Perfect-Session, and PerfectTemplate — not a standalone/experimental library.
 
 An `mysql-nio`-based async rewrite was considered and deliberately deferred — see [`Documentation/mysql-nio-integration-plan.md`](Documentation/mysql-nio-integration-plan.md) for the tradeoffs. This package remains the synchronous, blocking libmysqlclient wrapper described below.
 
-The pre-Swift-6 version of this package is preserved on the [`legacy`](../../tree/legacy) branch.
+The pre-Swift-6 version of this package (3.x, last released as 3.5.1) is preserved on the [`legacy`](https://github.com/PerfectlySoft/Perfect-MySQL/tree/legacy) branch. Stay on 3.5.1 if you can't move to Swift 6.2 yet.
 
 ## Requirements
 
-- Swift 6.2+ (`Package.swift` declares `platforms: [.macOS(.v12)]`)
-- macOS: the Homebrew `mysql-client` formula is keg-only and bottled for a specific macOS floor that moves as Homebrew rotates supported OS versions — check `brew info mysql-client` for the current bottle tag before assuming compatibility (at time of writing, `sonoma`/14.0+) — or Linux with `libmysqlclient-dev` (no specific minimum distro version is enforced by `Package.swift`; Ubuntu 20.04+ is a reasonable practical floor)
-- MySQL 8.0+ client library (libmysqlclient)
-- `Package.swift` depends on [Perfect-CRUD](https://github.com/PerfectlySoft/Perfect-CRUD) via `.package(url:, branch: "main")` — resolved by SwiftPM automatically, no sibling checkout needed
+- Swift 6.2 or newer (`swift-tools-version: 6.2`).
+- macOS 12+ (`platforms: [.macOS(.v12)]`) or Linux. CI covers macOS 26 with Xcode 26.0.1 and 26.6, and Ubuntu 24.04 with Swift 6.2 and 6.4. There is no iOS support: the client library isn't available there.
+- The MySQL client library, found through `pkg-config` as `mysqlclient`: Oracle's libmysqlclient 8.0 or newer (Homebrew `mysql-client` on macOS, `libmysqlclient-dev` on Linux), or MariaDB Connector/C through Debian's `libmariadb-dev-compat`. On macOS, Homebrew's bottle is built for a recent macOS, which then sets the real minimum for your binary; check `brew info mysql-client`.
+- [Perfect-CRUD](https://github.com/PerfectlySoft/Perfect-CRUD) 3.0.0 or newer, resolved by SwiftPM.
 
 ## macOS Setup
 
@@ -49,13 +49,12 @@ To make this permanent, add the export to your shell profile (`~/.zshrc` or `~/.
 sudo apt-get install libmysqlclient-dev pkg-config
 ```
 
-MySQL 8.0+ is required. On Ubuntu 20.04 and later the default `libmysqlclient-dev` package satisfies this.
+Ubuntu 20.04 and later ship a libmysqlclient 8.0 `libmysqlclient-dev`. To build against MariaDB Connector/C instead, install `libmariadb-dev-compat`, which provides the same `mysqlclient` pkg-config name (see the TLS section for how SSL modes differ there).
 
 ## Package.swift
 
 ```swift
-// No tagged releases exist yet, so pin a branch rather than a version:
-.package(url: "https://github.com/PerfectlySoft/Perfect-MySQL.git", branch: "main"),
+.package(url: "https://github.com/PerfectlySoft/Perfect-MySQL.git", from: "4.0.0"),
 ```
 
 ```swift
@@ -249,9 +248,22 @@ PKG_CONFIG_PATH=/opt/homebrew/opt/mysql-client/lib/pkgconfig \
 swift test
 ```
 
-## Notes on MySQL 8.0
+## Notes on client library versions
 
-MySQL 8.0 removed the `my_bool` typedef that earlier versions used for nullable bool fields. This package's inline `mysqlclient` system library target provides a compatibility shim (`typedef signed char my_bool`) so the source compiles against both old and new client versions.
+MySQL 8.0 removed the `my_bool` typedef that earlier versions used for nullable bool fields. This package's inline `mysqlclient` system library target defines it (`typedef signed char my_bool`) for libmysqlclient 8.0 and newer, and leaves MariaDB Connector/C's own definition alone, so the source compiles against both. CI builds against Ubuntu 24.04's libmysqlclient 8.0 and Homebrew's current `mysql-client`; MariaDB Connector/C builds were checked by hand (Ubuntu 24.04's `libmariadb-dev-compat`).
+
+## Migrating from 3.x
+
+4.0.0 is the Swift 6 rewrite; the public API of `MySQL`, `MySQLStmt` and `MySQLDatabaseConfiguration` is largely unchanged, apart from `Sendable` conformances and the additions below. When upgrading:
+
+- **Toolchain and platforms:** Swift 6.2+ and macOS 12+. The client library is no longer a separate `Perfect-mysqlclient` package; install it as described above and make sure `pkg-config` can find `mysqlclient` (on macOS, set `PKG_CONFIG_PATH` for the keg-only Homebrew formula).
+- **Perfect-CRUD 3:** this release requires Perfect-CRUD 3.0.0, which has breaking changes of its own; see its release notes.
+- **Binary values are bytes:** `MySQLStmt` results for BINARY, VARBINARY, BIT and GEOMETRY columns, and binary expressions such as `CAST(x AS BINARY)`, `UNHEX()` or `x'..'` literals, are now `[UInt8]` instead of `String` (BLOBs already were). Use `String(decoding: bytes, as: UTF8.self)`, or `CAST(… AS CHAR)` in SQL, where you want text. Through Perfect-CRUD, `String`, `UUID`, `Date` and `URL` properties over binary columns still decode as text.
+- **No more truncated text:** `MySQL.Results` (from `query(statement:)`) and `MySQLStmt` used to stop at the first invalid UTF-8 byte; they now return the whole value with U+FFFD for invalid bytes. For exact bytes from `MySQL.Results`, use the new `nextBytes()` / `forEachRowBytes(callback:)` and `fieldIsBinary(at:)`.
+- **Nested transactions work:** Perfect-CRUD's nested `transaction {}` sends `SAVEPOINT` statements, which MySQL can't prepare. These, and `BEGIN`, `START TRANSACTION`, `LOCK`/`UNLOCK TABLES` and `USE`, now run directly, as does anything else the server refuses to prepare (error 1295). An unpreparable statement that returns rows (`CHECK TABLE`, `XA RECOVER`) now throws instead of silently returning nothing.
+- **`setOption` is stricter:** `MYSQL_OPT_SSL_MODE` accepts only 1...5, and an integer option that doesn't fit a `UInt32` (such as -1) returns `false` instead of trapping. `connect()` always passes `CLIENT_REMEMBER_OPTIONS`, so options survive a failed attempt and a retry uses them again.
+- **Table creation and `.reconcileTable`:** a parent's table is created before sub-tables that reference it (and `.dropTable` drops them in reverse); reconcile no longer drops and re-adds columns whose names contain capitals (which lost their data), adds the FOREIGN KEY of a `@ForeignKey` column it adds (so the ALTER fails if existing rows violate it), and drops the constraint of a `@ForeignKey` column it removes.
+- **Identifiers:** `quote(identifier:)` doubles backticks inside names, so Perfect-CRUD's Dynamic API can't be used to inject SQL through a table or field name. It assumes a utf8mb4 connection, which the `database:host:` initializers set.
 
 ## License
 

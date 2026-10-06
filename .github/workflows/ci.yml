@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    # Builds against Oracle's libmysqlclient and runs every test against a MySQL 8.4 service.
+    name: Linux (Swift ${{ matrix.swift }}, ${{ matrix.configuration }})
+    runs-on: ubuntu-24.04
+    container: swift:${{ matrix.swift }}-noble
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest supported Swift (swift-tools-version 6.2) and the newest.
+        swift: ["6.2", "6.4"]
+        configuration: [debug, release]
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    env:
+      # The live tests drop and recreate databases; they run only when these name a server.
+      MYSQL_TESTS: "1"
+      MYSQL_FIXTURE_TESTS: "1"
+      MYSQL_TEST_HOST: mysql
+      MYSQL_TEST_PORT: "3306"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install client libraries
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends pkg-config libmysqlclient-dev
+
+      - name: Toolchain
+        run: swift --version
+
+      - name: Build (warnings are errors)
+        run: |
+          flags="-c ${{ matrix.configuration }} -Xswiftc -warnings-as-errors"
+          # @testable imports need testing enabled in an optimized build.
+          [ "${{ matrix.configuration }}" = release ] && flags="$flags -Xswiftc -enable-testing"
+          echo "FLAGS=$flags" >> "$GITHUB_ENV"
+          swift build --build-tests $flags
+
+      - name: Test
+        run: swift test $FLAGS
+
+  macos:
+    # GitHub's macOS runners have no MySQL server, so the live tests report as skipped.
+    name: macOS (Xcode ${{ matrix.xcode }}, ${{ matrix.configuration }})
+    runs-on: macos-26
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Xcode with Swift 6.2, and the runner's default.
+        xcode: ["26.0.1", "26.6"]
+        configuration: [debug, release]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_${{ matrix.xcode }}.app
+          swift --version
+
+      - name: Install client library
+        run: |
+          brew install mysql-client pkgconf
+          # mysql-client is keg-only, so pkg-config can't find mysqlclient.pc without this.
+          echo "PKG_CONFIG_PATH=$(brew --prefix mysql-client)/lib/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Build (warnings are errors)
+        run: |
+          flags="-c ${{ matrix.configuration }} -Xswiftc -warnings-as-errors"
+          # @testable imports need testing enabled in an optimized build.
+          [ "${{ matrix.configuration }}" = release ] && flags="$flags -Xswiftc -enable-testing"
+          echo "FLAGS=$flags" >> "$GITHUB_ENV"
+          swift build --build-tests $flags
+
+      - name: Test
+        run: swift test $FLAGS
