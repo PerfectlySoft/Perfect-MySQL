@@ -124,4 +124,64 @@ struct DynamicMySQLTests {
 			#expect(joinedRow["name"] == .string("parent"))
 		}
 	}
+
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
+	func executeReturnsRowsAndBindsValues() throws {
+		let fixture = try CatalogFixtureDatabase()
+		let database = fixture.database
+		let result = try database.execute(DynamicSQL(
+			sql: "SELECT ? AS n, ? AS s, ? AS b, ? AS z",
+			bindings: [.int(-5), .string("Koi"), .bytes([0, 255]), .null]))
+		let row = try #require(result.rows.first)
+		#expect(result.rows.count == 1)
+		#expect(row["n"] == .int(-5))
+		#expect(row["s"] == .string("Koi"))
+		#expect(row["b"] == .bytes([0, 255]))
+		#expect(row["z"] == .null)
+	}
+
+	// Unsigned values must bind as unsigned: UInt64.max is not -1.
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
+	func unsignedValuesRoundTrip() throws {
+		let fixture = try CatalogFixtureDatabase()
+		let database = fixture.database
+		try database.sql("CREATE TABLE dyn_unsigned (id BIGINT PRIMARY KEY, u BIGINT UNSIGNED)")
+		for (id, value) in [(1, UInt64.max), (2, UInt64(Int64.max) + 1), (3, 0)] {
+			_ = try database.mutate(DynamicMutation(
+				action: .insert, table: "dyn_unsigned",
+				values: ["id": .int(Int64(id)), "u": .uint(value)]))
+		}
+		let selected = try database.select(DynamicQuery(
+			table: "dyn_unsigned", fields: ["id", "u"],
+			predicates: [.init(field: "u", comparison: .equal, value: .uint(.max))]))
+		#expect(selected.rows.map { $0["id"] } == [.int(1)])
+		#expect(selected.rows.first?["u"] == .uint(.max))
+		let echoed = try database.execute(DynamicSQL(sql: "SELECT ? AS u", bindings: [.uint(.max)]))
+		#expect(echoed.rows.first?["u"] == .uint(.max))
+	}
+
+	// MySQL can't prepare several statements at once, and a CRUD connection doesn't set
+	// CLIENT_MULTI_STATEMENTS, so a batch must fail as a whole rather than run its first part.
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
+	func multipleStatementsThrowWithoutRunningAny() throws {
+		struct Count: Codable { let c: Int }
+		let fixture = try CatalogFixtureDatabase()
+		let database = fixture.database
+		try database.sql("CREATE TABLE dyn_multi (id BIGINT PRIMARY KEY)")
+		for sql in [
+			"INSERT INTO dyn_multi VALUES (1); INSERT INTO dyn_multi VALUES (2)",
+			"BEGIN; INSERT INTO dyn_multi VALUES (3); COMMIT",
+			"SELECT 1; SELECT 2",
+		] {
+			#expect(throws: (any Error).self, "\(sql)") {
+				try database.execute(DynamicSQL(sql: sql, allowsMultipleStatements: true))
+			}
+			// Without the flag Perfect-CRUD refuses it before reaching the connector.
+			#expect(throws: (any Error).self, "\(sql)") {
+				try database.execute(DynamicSQL(sql: sql))
+			}
+		}
+		let rows = try database.sql("SELECT COUNT(*) AS c FROM dyn_multi", Count.self)
+		#expect(rows.first?.c == 0)
+	}
 }
