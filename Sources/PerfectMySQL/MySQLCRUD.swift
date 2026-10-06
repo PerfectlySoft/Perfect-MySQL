@@ -132,10 +132,34 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol, @unchec
 		return (column(key) as? UInt64) ?? 0
 	}
 	func decode(_ type: Float.Type, forKey key: Key) throws -> Float {
-		return (column(key) as? Float) ?? 0
+		switch column(key) {
+		case let f as Float:
+			return f
+		case let d as Double:
+			return Float(d)
+		case let text as String: // DECIMAL arrives as text
+			guard let f = Float(text) else {
+				throw MySQLCRUDError("Could not convert \(text) into a Float for key: \(key.stringValue)")
+			}
+			return f
+		default:
+			return 0
+		}
 	}
 	func decode(_ type: Double.Type, forKey key: Key) throws -> Double {
-		return (column(key) as? Double) ?? 0
+		switch column(key) {
+		case let d as Double:
+			return d
+		case let f as Float:
+			return Double(f)
+		case let text as String: // DECIMAL arrives as text
+			guard let d = Double(text) else {
+				throw MySQLCRUDError("Could not convert \(text) into a Double for key: \(key.stringValue)")
+			}
+			return d
+		default:
+			return 0
+		}
 	}
 	func decode(_ type: String.Type, forKey key: Key) throws -> String {
 		return text(column(key)) ?? ""

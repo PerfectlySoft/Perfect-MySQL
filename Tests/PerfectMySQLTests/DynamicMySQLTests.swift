@@ -124,6 +124,26 @@ struct DynamicMySQLTests {
 		#expect(update.insertedID == nil)
 	}
 
+	// DECIMAL values arrive as text; Double and Float properties used to read them as 0.
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
+	func decimalColumnsDecodeIntoFloatingPoint() throws {
+		struct Price: Codable, TableNameProvider {
+			static let tableName = "decimal_price"
+			let id: Int
+			let amount: Double
+			let rate: Float
+			let optional: Double?
+		}
+		let fixture = try CatalogFixtureDatabase()
+		let database = fixture.database
+		try database.sql("CREATE TABLE decimal_price (id INT PRIMARY KEY, amount DECIMAL(12,2), rate DECIMAL(5,3), optional DECIMAL(8,4) NULL)")
+		try database.sql("INSERT INTO decimal_price VALUES (1, 1234.56, 0.125, NULL), (2, -0.50, 2.5, 3.1415)")
+		let prices = try database.table(Price.self).order(by: \.id).select().map { $0 }
+		#expect(prices.map(\.amount) == [1234.56, -0.5])
+		#expect(prices.map(\.rate) == [0.125, 2.5])
+		#expect(prices.map(\.optional) == [nil, 3.1415])
+	}
+
 	// DynamicRow lowercases its keys and traps on duplicates (Perfect-CRUD 3.0.0), so columns
 	// whose names differ only by case crashed the process. Same-named columns kept a random one.
 	// The first column of each name now wins, ignoring case.
