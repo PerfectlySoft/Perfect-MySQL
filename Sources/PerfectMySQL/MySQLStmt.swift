@@ -176,6 +176,17 @@ public final class MySQLStmt: @unchecked Sendable {
 		mysql_stmt_free_result(ptr)
 	}
 	
+	/// The statement's error, or the connection's when the client library reported it there
+	/// (MariaDB Connector/C does for a failed mysql_stmt_store_result). Call right after the
+	/// failing call.
+	func currentError() -> (code: UInt32, message: String) {
+		let code = mysql_stmt_errno(ptr)
+		if code != 0 {
+			return (code, errorMessage())
+		}
+		return (mysql_errno(connection.mysqlPtr), connection.errorMessage())
+	}
+
 	/// Returns the error number for the last statement execution
 	public func errorCode() -> UInt32 {
 		return mysql_stmt_errno(ptr)
@@ -543,9 +554,17 @@ public final class MySQLStmt: @unchecked Sendable {
 		let isNullBuffers: UnsafeMutablePointer<my_bool>
 		private var closed = false
 		/// True when reading the result failed, for example when a scalar subquery returned more
-		/// than one row partway through (error 1242). `next()` then returns nil; the statement's
-		/// `errorCode()` / `errorMessage()` say why.
+		/// than one row partway through (error 1242). `next()` then returns nil, and
+		/// `errorCode` / `errorMessage` say why.
 		public private(set) var failed = false
+		/// The server's error when `failed`, otherwise 0 / "".
+		public private(set) var errorCode: UInt32 = 0
+		public private(set) var errorMessage = ""
+
+		private func fail() {
+			failed = true
+			(errorCode, errorMessage) = stmt.currentError()
+		}
 		
 		init(_ s: MySQLStmt) {
 			stmt = s
@@ -558,7 +577,7 @@ public final class MySQLStmt: @unchecked Sendable {
 			isNullBuffers = UnsafeMutablePointer<my_bool>.allocate(capacity: numFields)
 			// Fetching from a result whose store failed crashes inside libmariadb, so remember it.
 			if numFields > 0 && mysql_stmt_store_result(stmt.ptr) != 0 {
-				failed = true
+				fail()
 			}
 			bind()
 		}
@@ -577,7 +596,7 @@ public final class MySQLStmt: @unchecked Sendable {
 			}
 			let fetchRes = mysql_stmt_fetch(stmt.ptr)
 			if fetchRes == 1 {
-				failed = true
+				fail()
 				return false
 			}
 			return fetchRes != MYSQL_NO_DATA

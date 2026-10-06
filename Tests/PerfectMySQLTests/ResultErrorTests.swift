@@ -28,9 +28,10 @@ struct ResultErrorTests {
 	func aFailingResultThrowsThroughCRUD() throws {
 		let fixture = try Self.database()
 		let db = fixture.database
-		#expect(throws: MySQLCRUDError.self) {
+		let error = #expect(throws: MySQLCRUDError.self) {
 			_ = try db.sql(Self.failingQuery, Row.self)
 		}
+		#expect(error?.description.contains("more than 1 row") == true)
 		#expect(throws: MySQLCRUDError.self) {
 			_ = try db.execute(DynamicSQL(sql: Self.failingQuery))
 		}
@@ -50,7 +51,8 @@ struct ResultErrorTests {
 		var rows = 0
 		while results.next() != nil { rows += 1 }
 		#expect(results.failed)
-		#expect(stmt.errorCode() == 1242)
+		#expect(results.errorCode == 1242)
+		#expect(results.errorMessage.contains("more than 1 row"))
 		#expect(rows == 0)
 	}
 }
