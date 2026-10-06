@@ -267,6 +267,7 @@ MySQL 8.0 removed the `my_bool` typedef that earlier versions used for nullable 
 - **Duplicate column names:** when a result has several columns with the same name (`p.id, c.id`), a Codable model or a Dynamic row now reads the first one (before, which one was arbitrary). Dynamic rows also treat names that differ only by case as the same name, which used to crash with Perfect-CRUD 3.0.0. Alias the columns (`c.id AS child_id`) when you need both.
 - **Stored procedures:** `CALL` through Perfect-CRUD now returns the procedure's first result set (it used to read every column as missing), and the remaining result sets are discarded so the connection stays usable.
 - **Counts and IDs:** `MySQL.numberAffectedRows()` returns -1 after an error, as the C API does, and `lastInsertId()` returns an ID above `Int64.max` as its bit pattern (`UInt64(bitPattern:)`); both used to trap. A Dynamic statement that returns rows reports their count as `affectedRows` and no `insertedID`.
+- **Errors while reading rows:** a statement that fails partway through its rows (such as a subquery returning more than one row) now throws through Perfect-CRUD instead of returning an empty result, and `MySQLStmt.Results` sets `failed`.
 - **DECIMAL columns** now decode into `Double` and `Float` properties; they used to read as 0.
 - **Identifiers:** `quote(identifier:)` doubles backticks inside names, so Perfect-CRUD's Dynamic API can't be used to inject SQL through a table or field name. It assumes a utf8mb4 connection, which the `database:host:` initializers set.
 
