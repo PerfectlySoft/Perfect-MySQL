@@ -132,14 +132,16 @@ public final class MySQL: @unchecked Sendable {
 
 	/// Table names matching an optional LIKE pattern (`%` and `_` are wildcards; `\` escapes them,
 	/// except on a server in `NO_BACKSLASH_ESCAPES` mode). Returns [] on an error, and for a
-	/// wildcard refused by `listingWildcardIsUnsafe`.
+	/// refused wildcard: one containing both `'` and `\`, or one refused by
+	/// `listingWildcardIsUnsafe`.
 	public func listTables(wildcard wild: String? = nil) -> [String] {
 		return listNames("SHOW TABLES", like: wild)
 	}
 
 	/// Database names matching an optional LIKE pattern (`%` and `_` are wildcards; `\` escapes
 	/// them, except on a server in `NO_BACKSLASH_ESCAPES` mode). Returns [] on an error, and for a
-	/// wildcard refused by `listingWildcardIsUnsafe`.
+	/// refused wildcard: one containing both `'` and `\`, or one refused by
+	/// `listingWildcardIsUnsafe`.
 	public func listDatabases(wildcard wild: String? = nil) -> [String] {
 		return listNames("SHOW DATABASES", like: wild)
 	}
@@ -147,28 +149,50 @@ public final class MySQL: @unchecked Sendable {
 	// mysql_list_tables / mysql_list_dbs aren't used: libmariadb's paste the wildcard into
 	// "SHOW ... LIKE '%s'" without escaping it at all (and cut it off at 255 bytes), so a `'`
 	// ended the string literal on a Connector/C build, and Oracle's escape byte by byte (see
-	// listingWildcardIsUnsafe). The query is built here, as in Perfect-MariaDB, with the pattern
-	// escaped by perfect_mysql_escape_string_quote (mysql_real_escape_string_quote on
-	// libmysqlclient, mysql_real_escape_string on libmariadb), which follows the connection's
-	// character set and the server's NO_BACKSLASH_ESCAPES mode as the client library knows them:
-	// under NO_BACKSLASH_ESCAPES a `'` is doubled instead of backslash-escaped. It's built as bytes:
-	// under a charset other than UTF-8 the escaped pattern needn't be valid UTF-8.
+	// listingWildcardIsUnsafe). The literal is built here, as bytes (under a charset other than
+	// UTF-8 the result needn't be valid UTF-8), so that nothing depends on knowing the server's
+	// NO_BACKSLASH_ESCAPES mode. The client library's escaping functions take that mode from a
+	// status bit that goes stale after a stored routine changes sql_mode, and then a `'` came out
+	// as `\'` on a server in that mode, or a `\` was left alone on one that isn't, and either
+	// ended the literal.
+	// - A `'` is written as `''`, a quote in both modes (and 0x27 is never the second byte of a
+	//   multibyte character). A wildcard that also contains `\` is refused: its meaning would
+	//   depend on the mode.
+	// - A wildcard without `'` goes through perfect_mysql_escape_string_quote (libmysqlclient's
+	//   mysql_real_escape_string_quote, which unlike mysql_real_escape_string works under
+	//   NO_BACKSLASH_ESCAPES; libmariadb's mysql_real_escape_string). Its output has no `'`, so
+	//   with a wrong mode bit the worst case is a syntax error.
+	// - The multibyte guard above still applies first.
 	private func listNames(_ show: String, like wild: String?) -> [String] {
 		guard !listingWildcardIsUnsafe(wild) else {
 			return []
 		}
 		var query = Array(show.utf8)
 		if let wild {
-			let from = Array(wild.utf8).map { CChar(bitPattern: $0) } + [0]
-			var escaped = [CChar](repeating: 0, count: (from.count - 1) * 2 + 1)
-			let length = perfect_mysql_escape_string_quote(mysqlPtr, &escaped, from, UInt(from.count - 1),
-														   CChar(UInt8(ascii: "'")))
-			guard length != UInt.max else {
-				return []
-			}
+			let bytes = Array(wild.utf8)
+			let quote = UInt8(ascii: "'")
 			query += Array(" LIKE '".utf8)
-			query += escaped[0..<Int(length)].map { UInt8(bitPattern: $0) }
-			query.append(UInt8(ascii: "'"))
+			if bytes.contains(quote) {
+				guard !bytes.contains(UInt8(ascii: "\\")) else {
+					return []
+				}
+				for byte in bytes {
+					query.append(byte)
+					if byte == quote {
+						query.append(quote)
+					}
+				}
+			} else {
+				let from = bytes.map { CChar(bitPattern: $0) } + [0]
+				var escaped = [CChar](repeating: 0, count: bytes.count * 2 + 1)
+				let length = perfect_mysql_escape_string_quote(mysqlPtr, &escaped, from, UInt(bytes.count),
+															   CChar(bitPattern: quote))
+				guard length != UInt.max else {
+					return []
+				}
+				query += escaped[0..<Int(length)].map { UInt8(bitPattern: $0) }
+			}
+			query.append(quote)
 		}
 		let status = query.withUnsafeBufferPointer { buffer in
 			buffer.withMemoryRebound(to: CChar.self) { mysql_real_query(mysqlPtr, $0.baseAddress, UInt($0.count)) }

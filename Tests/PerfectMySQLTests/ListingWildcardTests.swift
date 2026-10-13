@@ -55,7 +55,9 @@ struct ListingWildcardTests {
 			try #require(MySQLTestEnvironment.connect(admin, database: schema))
 			try #require(admin.query(statement: "CREATE TABLE `it's` (i INT)"))
 			#expect(mysql.listTables(wildcard: "it's") == ["it's"], "\(charset)")
-			#expect(mysql.listTables(wildcard: "it\\'s") == ["it's"], "\(charset)")
+			// A wildcard with both ' and \ is refused: what the \ means depends on the server's mode.
+			#expect(mysql.listTables(wildcard: "it\\'s").isEmpty, "\(charset)")
+			#expect(mysql.listTables(wildcard: "it_s") == ["it's"], "\(charset)")
 			try #require(admin.query(statement: "DROP TABLE `it's`"))
 		}
 	}
@@ -109,6 +111,47 @@ struct ListingWildcardTests {
 				_ = mysql.storeResults()
 			}
 			try #require(admin.query(statement: "DROP TABLE `it's`"))
+		}
+	}
+
+	/// Runs `sql` and reads every result (a CALL returns several).
+	static func run(_ mysql: MySQL, _ sql: String) throws {
+		try #require(mysql.query(statement: sql), "\(sql): \(mysql.errorMessage())")
+		_ = mysql.storeResults()
+		while mysql.moreResults() {
+			_ = mysql.nextResult()
+			_ = mysql.storeResults()
+		}
+	}
+
+	// The client library chooses backslash-escaping or quote-doubling from the server's
+	// NO_BACKSLASH_ESCAPES status bit, and after a stored routine changes sql_mode that bit can
+	// disagree with the session's real mode, for later statements too. A `'` escaped as `\'`
+	// on a server in NBE mode, or a `\` left alone on one that isn't, ended the literal.
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled), arguments: ["utf8mb4", "latin1", "big5"])
+	func aStaleNoBackslashEscapesBitCannotEndTheLiteral(charset: String) throws {
+		try Self.withSchema(charset: charset) { mysql, schema in
+			try Self.run(mysql, "CREATE PROCEDURE clear_mode() SET SESSION sql_mode = ''")
+			try Self.run(mysql, "CREATE PROCEDURE set_nbe() SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'")
+			try Self.run(mysql, "CREATE FUNCTION nbe_fn() RETURNS INT DETERMINISTIC BEGIN SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'; RETURN 1; END")
+			let payloads = ["x'; DROP TABLE victim; -- ", "x\\'; DROP TABLE victim; -- ", "x\\"]
+			let setups: [[String]] = [
+				["SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'", "CALL clear_mode()"],
+				["SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'", "CALL clear_mode()", "DO 1"],
+				["SET SESSION sql_mode = ''", "CALL set_nbe()"],
+				["SET SESSION sql_mode = ''", "SELECT nbe_fn()", "DO 1"],
+			]
+			for setup in setups {
+				for payload in payloads {
+					for sql in setup { try Self.run(mysql, sql) }
+					#expect(mysql.listTables(wildcard: payload).isEmpty, "\(charset) \(setup)")
+					#expect(mysql.query(statement: "SELECT 1"), "\(charset) \(setup): \(mysql.errorMessage())")
+					_ = mysql.storeResults()
+				}
+				for sql in setup { try Self.run(mysql, sql) }
+				#expect(mysql.listTables(wildcard: "vic%") == ["victim"], "\(charset) \(setup)")
+				#expect(mysql.listTables(wildcard: "it's").isEmpty, "\(charset) \(setup)")
+			}
 		}
 	}
 }
