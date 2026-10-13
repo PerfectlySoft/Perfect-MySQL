@@ -228,4 +228,39 @@ struct ParameterBindTests {
 		#expect(row?.count == 8)
 		#expect(row?[7] as? Int64 == 8)
 	}
+
+	// After reset() the parameter buffers are freed, but the client library still holds the old
+	// binds; executing again without rebinding read freed memory. It's now refused.
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
+	func executingWithoutBindingEveryParameterIsRefused() throws {
+		let mysql = MySQL()
+		try #require(MySQLTestEnvironment.connect(mysql, database: testAdminDB))
+		let stmt = MySQLStmt(mysql)
+		try #require(stmt.prepare(statement: "SELECT LENGTH(?) AS l, ? AS s"))
+		stmt.bindParam([UInt8](repeating: 7, count: 4096))
+		stmt.bindParam("hello")
+		try #require(stmt.execute())
+		#expect(stmt.results().next()?[0] as? Int64 == 4096)
+		stmt.reset()
+
+		#expect(!stmt.execute())
+		#expect(stmt.errorCode() == 2031)
+		#expect(stmt.errorMessage().contains("No data supplied"))
+		stmt.bindParam([UInt8](repeating: 1, count: 3))
+		#expect(!stmt.execute(), "one of two parameters bound")
+		stmt.reset()
+
+		stmt.bindParam([UInt8](repeating: 1, count: 3))
+		stmt.bindParam("again")
+		#expect(stmt.execute(), "\(stmt.errorMessage())")
+		#expect(stmt.errorCode() == 0)
+		#expect(stmt.results().next()?[0] as? Int64 == 3)
+
+		let plain = MySQLStmt(mysql) // no parameters: nothing to bind
+		try #require(plain.prepare(statement: "SELECT 1"))
+		#expect(plain.execute())
+		_ = plain.results().next()
+		plain.reset()
+		#expect(plain.execute())
+	}
 }

@@ -22,6 +22,9 @@ public final class MySQLStmt: @unchecked Sendable {
 	var meta: UnsafeMutablePointer<MYSQL_RES>?
 	/// The Results whose buffers the client library is currently bound to, if any.
 	var resultOwner: ObjectIdentifier?
+	/// An error this wrapper raised itself (not the client library), reported by errorCode() /
+	/// errorMessage() until the next prepare() or execute().
+	private var wrapperError: (code: UInt32, message: String)?
 	
 	/// initialize mysql statement structure
 	public init(_ mysql: MySQL) {
@@ -194,16 +197,17 @@ public final class MySQLStmt: @unchecked Sendable {
 
 	/// Returns the error number for the last statement execution
 	public func errorCode() -> UInt32 {
-		return mysql_stmt_errno(ptr)
+		return wrapperError?.code ?? mysql_stmt_errno(ptr)
 	}
 	
 	/// Returns the error message for the last statement execution
 	public func errorMessage() -> String {
-		return String(validatingCString: mysql_stmt_error(ptr)) ?? ""
+		return wrapperError?.message ?? String(validatingCString: mysql_stmt_error(ptr)) ?? ""
 	}
 	
 	/// Prepares an SQL statement string for execution
 	public func prepare(statement query: String) -> Bool {
+		wrapperError = nil
 		let utf8Chars = query.utf8
 		let r = mysql_stmt_prepare(ptr, query, UInt(utf8Chars.count))
 		guard r == 0 else {
@@ -227,6 +231,15 @@ public final class MySQLStmt: @unchecked Sendable {
 	
 	/// Executes a prepared statement, binding parameters if needed
 	public func execute() -> Bool {
+		wrapperError = nil
+		// The client library keeps the previous execution's parameter binds, whose buffers
+		// reset() has freed. Executing again without binding every parameter would make it read
+		// them (a use-after-free), so refuse, with libmysqlclient's own error for this case.
+		let count = paramCount()
+		guard paramBindsOffset == count else {
+			wrapperError = (2031, "No data supplied for parameters in prepared statement") // CR_PARAMS_NOT_BOUND
+			return false
+		}
 		if paramBindsOffset > 0 {
 			guard let paramBinds = self.paramBinds else {
 					return false
