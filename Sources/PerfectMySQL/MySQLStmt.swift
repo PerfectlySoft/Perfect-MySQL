@@ -72,10 +72,11 @@ public final class MySQLStmt: @unchecked Sendable {
 	
 	public func fieldInfo(index: Int) -> FieldInfo? {
 		let fieldCount = Int(self.fieldCount())
-		guard index < fieldCount else {
+		guard index >= 0, index < fieldCount else {
 			return nil
 		}
-		guard let field = mysql_fetch_field_direct(meta, UInt32(index)) else {
+		refreshMetadataIfStale()
+		guard let meta, let field = mysql_fetch_field_direct(meta, UInt32(index)) else {
 			return nil
 		}
 		let f: MYSQL_FIELD = field.pointee
@@ -238,7 +239,16 @@ public final class MySQLStmt: @unchecked Sendable {
       		}
 		}
 		let r = mysql_stmt_execute(ptr)
-		return r == 0
+		guard r == 0 else {
+			return false
+		}
+		// The cached metadata's fields can point into storage the client library replaces on
+		// each execution (MariaDB Connector/C does for a CALL), so fetch it afresh when needed.
+		if let m = meta {
+			mysql_free_result(m)
+			meta = nil
+		}
+		return true
 	}
 	
 	/// returns current results
