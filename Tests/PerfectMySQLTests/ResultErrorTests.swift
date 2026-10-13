@@ -91,4 +91,45 @@ struct ParameterBindTests {
 		#expect(stmt.execute(), "\(stmt.errorMessage())")
 		#expect(stmt.results().next()?.first as? Int64 == 6)
 	}
+
+	// Blob parameters copy the value into a buffer that reset() never freed, so every
+	// [UInt8] / [Int8] / (_:length:) parameter leaked (891 leaks, 37,984 bytes over 300 executions
+	// of a 3-blob INSERT under `leaks --atExit`; 0 after). This checks that freeing them on
+	// reset and on rebind doesn't disturb the values, including empty blobs and pending binds.
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
+	func repeatedBlobBindsWithResetAndRebind() throws {
+		let fixture = try CatalogFixtureDatabase()
+		try fixture.database.sql("CREATE TABLE blobs (n INT PRIMARY KEY, a BLOB, b BLOB, c BLOB)")
+		let mysql = MySQL()
+		try #require(MySQLTestEnvironment.connect(mysql, database: fixture.config.schema))
+		let stmt = MySQLStmt(mysql)
+		try #require(stmt.prepare(statement: "INSERT INTO blobs VALUES (?, ?, ?, ?)"))
+		for n in 0..<200 {
+			let bytes = [UInt8](repeating: UInt8(n % 256), count: n % 7)
+			let signed = [Int8](repeating: -1, count: n % 5)
+			if n % 3 == 0 { // binds left pending, then cleared by reset() before the real ones
+				stmt.bindParam([UInt8](repeating: 9, count: 100))
+				stmt.reset()
+			}
+			stmt.bindParam(n)
+			stmt.bindParam(bytes)
+			stmt.bindParam(signed)
+			let raw: [Int8] = [1, 2, 3, 4]
+			raw.withUnsafeBufferPointer { stmt.bindParam($0.baseAddress!, length: n % 4) }
+			#expect(stmt.execute(), "\(n): \(stmt.errorMessage())")
+			stmt.reset()
+		}
+		stmt.bindParam(1000)
+		stmt.bindParam([UInt8](repeating: 1, count: 10))
+		stmt.clearBinds() // frees pending blob binds and the array
+
+		struct Row: Codable { let n: Int; let a: [UInt8]; let b: [UInt8]; let c: [UInt8] }
+		let rows = try fixture.database.sql("SELECT n, a, b, c FROM blobs ORDER BY n", Row.self)
+		#expect(rows.count == 200)
+		for row in rows {
+			#expect(row.a == [UInt8](repeating: UInt8(row.n % 256), count: row.n % 7), "\(row.n)")
+			#expect(row.b == [UInt8](repeating: 255, count: row.n % 5), "\(row.n)")
+			#expect(row.c == Array([1, 2, 3, 4].prefix(row.n % 4)), "\(row.n)")
+		}
+	}
 }
