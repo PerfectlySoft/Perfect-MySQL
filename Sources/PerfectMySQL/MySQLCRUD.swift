@@ -174,7 +174,7 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol, @unchec
 			let ret: [UInt8] = (val as? [UInt8]) ?? []
 			return ret as! T
 		case .int8Array:
-			let ret: [Int8] = ((val as? [UInt8]) ?? []).map { Int8($0) }
+			let ret: [Int8] = ((val as? [UInt8]) ?? []).map { Int8(bitPattern: $0) }
 			return ret as! T
 		case .data:
 			let bytes: [UInt8] = (val as? [UInt8]) ?? []
