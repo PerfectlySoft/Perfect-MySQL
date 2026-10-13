@@ -263,4 +263,64 @@ struct ParameterBindTests {
 		plain.reset()
 		#expect(plain.execute())
 	}
+
+	// Binding more values than a statement has parameters wrote past the bind array (SIGSEGV
+	// through Perfect-CRUD, even with the system allocator). The extra values are now refused with
+	// error 2034, and execute() refuses until the statement is reset and bound correctly.
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
+	func bindingTooManyParametersIsRefused() throws {
+		struct X: Codable { let x: Int }
+		let fixture = try CatalogFixtureDatabase()
+		let db = fixture.database
+		#expect(throws: (any Error).self) {
+			_ = try db.sql("SELECT ? AS x", bindings: [("?", .integer(1)), ("?", .string("two")), ("?", .blob([3]))], X.self)
+		}
+		#expect(try db.sql("SELECT ? AS x", bindings: [("?", .integer(4))], X.self).map(\.x) == [4])
+
+		let mysql = db.configuration.connection
+		let stmt = MySQLStmt(mysql)
+		try #require(stmt.prepare(statement: "SELECT ? AS x"))
+		stmt.bindParam(1)
+		stmt.bindParam("x")
+		stmt.bindParam([UInt8](repeating: 1, count: 64))
+		stmt.bindParam()
+		#expect(stmt.errorCode() == 2034)
+		#expect(!stmt.execute())
+		#expect(stmt.errorCode() == 2034)
+		stmt.reset()
+		#expect(stmt.errorCode() == 0, "a 2034 doesn't outlive reset()")
+		stmt.bindParam(5)
+		#expect(stmt.errorCode() == 0)
+		#expect(stmt.execute(), "\(stmt.errorMessage())")
+		#expect((stmt.results().next()?[0] as? any BinaryInteger).map { Int64($0) } == 5)
+		stmt.reset()
+
+		// A stray value on a statement without parameters doesn't stick after reset().
+		let plain = MySQLStmt(mysql)
+		try #require(plain.prepare(statement: "SELECT 1"))
+		plain.bindParam(1)
+		#expect(!plain.execute())
+		plain.reset()
+		#expect(plain.execute(), "\(plain.errorMessage())")
+		_ = plain.results().next()
+
+		// After clearBinds() on a prepared statement there's no array: values are refused, and
+		// execute() says so (2034) rather than failing with no error.
+		let cleared = MySQLStmt(mysql)
+		try #require(cleared.prepare(statement: "SELECT ? AS x"))
+		cleared.clearBinds()
+		cleared.bindParam(1)
+		#expect(!cleared.execute())
+		#expect(cleared.errorCode() == 2034, "\(cleared.errorCode()) \(cleared.errorMessage())")
+
+		// After a failed prepare, execute() fails with the library's error, not 2031: 1243
+		// ("Unknown prepared statement handler") from libmysqlclient, 2014 ("Commands out of sync")
+		// from MariaDB Connector/C.
+		let broken = MySQLStmt(mysql)
+		try #require(broken.prepare(statement: "SELECT ? AS x"))
+		broken.bindParam(1)
+		#expect(!broken.prepare(statement: "SELEC nonsense"))
+		#expect(!broken.execute())
+		#expect(broken.errorCode() != 2031, "\(broken.errorCode()) \(broken.errorMessage())")
+	}
 }

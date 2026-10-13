@@ -19,6 +19,8 @@ public final class MySQLStmt: @unchecked Sendable {
 	private let connection: MySQL
 	private(set) var paramBinds: UnsafeMutablePointer<MYSQL_BIND>?
 	private var paramBindsOffset = 0
+	/// The number of parameters the prepared statement has: the size of `paramBinds`.
+	private var paramBindsCapacity = 0
 	var meta: UnsafeMutablePointer<MYSQL_RES>?
 	/// The Results whose buffers the client library is currently bound to, if any.
 	var resultOwner: ObjectIdentifier?
@@ -132,7 +134,9 @@ public final class MySQLStmt: @unchecked Sendable {
 	}
 	
 	public func resetBinds() {
-		let count = paramBindsOffset
+		// Values bound past the statement's parameter count were never stored (see
+		// reserveParamBind), so only the array's own entries are freed.
+		let count = min(paramBindsOffset, paramBindsCapacity)
 		if let paramBinds = self.paramBinds, count > 0 {
 			for i in 0..<count {
 				let bind = paramBinds[i]
@@ -166,8 +170,9 @@ public final class MySQLStmt: @unchecked Sendable {
 				}
 				paramBinds[i] = MYSQL_BIND()
 			}
-			paramBindsOffset = 0
 		}
+		paramBindsOffset = 0
+		wrapperError = nil // a 2034 from binding too many values doesn't outlive the values
 	}
 	
 	public func clearBinds() {
@@ -177,6 +182,19 @@ public final class MySQLStmt: @unchecked Sendable {
 		paramBinds?.deallocate()
 		paramBinds = nil
 		paramBindsOffset = 0
+		paramBindsCapacity = 0
+	}
+
+	/// Whether there's room in `paramBinds` for one more value. Past the statement's parameter
+	/// count, a value used to be written past the end of the array; now it's counted but not
+	/// stored, the error is 2034 (CR_INVALID_PARAMETER_NO), and execute() refuses until reset().
+	private func reserveParamBind() -> Bool {
+		guard paramBinds != nil, paramBindsOffset < paramBindsCapacity else {
+			wrapperError = (2034, "Invalid parameter number") // CR_INVALID_PARAMETER_NO
+			paramBindsOffset += 1
+			return false
+		}
+		return true
 	}
 	
 	/// Free the resources allocated to a statement handle
@@ -210,6 +228,10 @@ public final class MySQLStmt: @unchecked Sendable {
 		wrapperError = nil
 		let utf8Chars = query.utf8
 		let r = mysql_stmt_prepare(ptr, query, UInt(utf8Chars.count))
+		// A statement prepared again gets a fresh bind array. After a failed prepare there's no
+		// statement to bind to, and execute() then fails with the library's own error (on MariaDB
+		// Connector/C that's 2014, "Commands out of sync"), not this wrapper's 2031.
+		clearBinds()
 		guard r == 0 else {
 			return false
 		}
@@ -217,7 +239,6 @@ public final class MySQLStmt: @unchecked Sendable {
 			mysql_free_result(m)
 		}
 		meta = mysql_stmt_result_metadata(ptr)
-		clearBinds() // a statement prepared again would otherwise leak the previous array
 		let count = paramCount()
 		if count > 0 {
 			paramBinds = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: count)
@@ -225,6 +246,7 @@ public final class MySQLStmt: @unchecked Sendable {
 			for i in 0..<count {
 				paramBinds?.advanced(by: i).initialize(to: initBind)
 			}
+			paramBindsCapacity = count
 		}
 		return true
 	}
@@ -236,8 +258,12 @@ public final class MySQLStmt: @unchecked Sendable {
 		// reset() has freed. Executing again without binding every parameter would make it read
 		// them (a use-after-free), so refuse, with libmysqlclient's own error for this case.
 		let count = paramCount()
-		guard paramBindsOffset == count else {
-			wrapperError = (2031, "No data supplied for parameters in prepared statement") // CR_PARAMS_NOT_BOUND
+		// paramBindsOffset <= paramBindsCapacity: after clearBinds() on a prepared statement every
+		// value is refused (there's no array), so the count can match without anything stored.
+		guard paramBindsOffset == count, paramBindsOffset <= paramBindsCapacity else {
+			wrapperError = paramBindsOffset < count
+				? (2031, "No data supplied for parameters in prepared statement") // CR_PARAMS_NOT_BOUND
+				: (2034, "Invalid parameter number") // CR_INVALID_PARAMETER_NO: values that weren't stored
 			return false
 		}
 		if paramBindsOffset > 0 {
@@ -397,6 +423,9 @@ public final class MySQLStmt: @unchecked Sendable {
 	}
 	
 	func bindParam(_ s: String, type: enum_field_types) {
+		guard reserveParamBind() else {
+			return
+		}
 		guard let allocd = allocated(s) else {
 			return
 		}
@@ -411,6 +440,9 @@ public final class MySQLStmt: @unchecked Sendable {
 	
 	/// create Double parameter binding
 	public func bindParam(_ d: Double) {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset].buffer_type = MYSQL_TYPE_DOUBLE
 		paramBinds?[paramBindsOffset].buffer_length = UInt(MemoryLayout<Double>.size)
 		let a = UnsafeMutablePointer<Double>.allocate(capacity: 1)
@@ -422,6 +454,9 @@ public final class MySQLStmt: @unchecked Sendable {
 	
 	/// create Float parameter binding
 	public func bindParam(_ d: Float) {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset].buffer_type = MYSQL_TYPE_FLOAT
 		paramBinds?[paramBindsOffset].buffer_length = UInt(MemoryLayout<Float>.size)
 		let a = UnsafeMutablePointer<Float>.allocate(capacity: 1)
@@ -464,54 +499,81 @@ public final class MySQLStmt: @unchecked Sendable {
 	
 	/// create Int64 parameter binding
 	public func bindParam(_ i: Int64) {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_LONGLONG, value: i)
 		paramBindsOffset += 1
 	}
 	
 	/// create UInt64 parameter binding
 	public func bindParam(_ i: UInt64) {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_LONGLONG, value: i)
 		paramBindsOffset += 1
 	}
 	
 	/// create Int32 parameter binding
 	public func bindParam(_ i: Int32) {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_LONG, value: i)
 		paramBindsOffset += 1
 	}
 	
 	/// create UInt32 parameter binding
 	public func bindParam(_ i: UInt32) {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_LONG, value: i)
 		paramBindsOffset += 1
 	}
 	
 	/// create Int16 parameter binding
 	public func bindParam(_ i: Int16) {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_SHORT, value: i)
 		paramBindsOffset += 1
 	}
 	
 	/// create UInt16 parameter binding
 	public func bindParam(_ i: UInt16) {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_SHORT, value: i)
 		paramBindsOffset += 1
 	}
 	
 	/// create Int16 parameter binding
 	public func bindParam(_ i: Int8) {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_TINY, value: i)
 		paramBindsOffset += 1
 	}
 	
 	/// create UInt16 parameter binding
 	public func bindParam(_ i: UInt8) {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset] = genBind(type: MYSQL_TYPE_TINY, value: i)
 		paramBindsOffset += 1
 	}
 	
 	/// create String parameter binding
 	public func bindParam(_ s: String) {
+		guard reserveParamBind() else {
+			return
+		}
 		guard let allocd = allocated(s) else {
 			return
 		}
@@ -526,6 +588,9 @@ public final class MySQLStmt: @unchecked Sendable {
 	
 	/// create String parameter binding
 	public func bindParam(_ a: [UInt8]) {
+		guard reserveParamBind() else {
+			return
+		}
 		guard let allocd = allocated(a) else {
 			return
 		}
@@ -539,6 +604,9 @@ public final class MySQLStmt: @unchecked Sendable {
 	
 	/// create String parameter binding
 	public func bindParam(_ a: [Int8]) {
+		guard reserveParamBind() else {
+			return
+		}
 		guard let allocd = allocated(a) else {
 			return
 		}
@@ -553,6 +621,9 @@ public final class MySQLStmt: @unchecked Sendable {
 	/// create Blob parameter binding
 	/// The memory is copied.
 	public func bindParam(_ b: UnsafePointer<Int8>, length: Int) {
+		guard reserveParamBind() else {
+			return
+		}
 		guard let allocd = allocated(b, length: length) else {
 			return
 		}
@@ -567,6 +638,9 @@ public final class MySQLStmt: @unchecked Sendable {
 	
 	/// create null parameter binding
 	public func bindParam() {
+		guard reserveParamBind() else {
+			return
+		}
 		paramBinds?[paramBindsOffset].buffer_type = MYSQL_TYPE_NULL
 		paramBinds?[paramBindsOffset].length = UnsafeMutablePointer<UInt>.allocate(capacity: 1)
 		paramBindsOffset += 1
