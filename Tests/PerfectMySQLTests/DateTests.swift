@@ -36,6 +36,20 @@ struct DateTests {
 		}
 	}
 
+	// Fractions are carried as whole microseconds and truncated when writing: a Double sum used
+	// to round '9999-12-31 23:59:59.999999' into year 10000, which the writer then emitted.
+	@Test func fractionsStayInsideTheirSecond() {
+		let lastSecond = Date(fromMysqlFormatted: "9999-12-31 23:59:59.999999")
+		#expect(lastSecond.map { $0 < Self.utc(9999, 12, 31, 23, 59, 59).addingTimeInterval(1) } == true)
+		#expect(lastSecond?.mysqlFormatted() == "9999-12-31 23:59:59")
+		let beforeEpoch = Date(fromMysqlFormatted: "1969-12-31 23:59:59.999999")
+		#expect(beforeEpoch?.mysqlFormatted() == "1969-12-31 23:59:59")
+		#expect(beforeEpoch.map { abs($0.timeIntervalSince1970 + 0.000001) < 0.0000005 } == true)
+		#expect(Date(fromMysqlFormatted: "2023-11-14 22:13:20.000001")?.mysqlFormatted() == "2023-11-14 22:13:20")
+		#expect(Date(timeIntervalSince1970: -0.5).mysqlFormatted() == "1969-12-31 23:59:59")
+		#expect(Date(timeIntervalSinceReferenceDate: 721_692_800.9999).mysqlFormatted() == "2023-11-14 22:13:20")
+	}
+
 	struct DateRow: Codable, TableNameProvider {
 		static let tableName = "date_row"
 		let id: Int

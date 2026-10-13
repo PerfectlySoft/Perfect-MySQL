@@ -905,7 +905,10 @@ extension Date {
 		dateFormatter.calendar = mysqlUTCCalendar
 		dateFormatter.timeZone = mysqlUTC
 		dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-		let ret = dateFormatter.string(from: self)
+		// Whole seconds, truncated (toward the past): rounding could carry
+		// 9999-12-31 23:59:59.9999995 into a year-10000 string the server rejects.
+		let seconds = timeIntervalSinceReferenceDate.rounded(.down)
+		let ret = dateFormatter.string(from: Date(timeIntervalSinceReferenceDate: seconds))
 		return ret
 	}
 	
@@ -933,7 +936,7 @@ extension Date {
 			return nil
 		}
 		var components = DateComponents(year: year, month: month, day: day, hour: 0, minute: 0, second: 0)
-		var fraction = 0.0
+		var microseconds = 0
 		if chars.count >= 19 {
 			guard chars[10] == UInt8(ascii: " ") || chars[10] == UInt8(ascii: "T"),
 				  chars[13] == UInt8(ascii: ":"), chars[16] == UInt8(ascii: ":"),
@@ -947,14 +950,29 @@ extension Date {
 				guard chars[19] == UInt8(ascii: "."), let digits = number(20..<chars.count) else {
 					return nil
 				}
-				fraction = Double(digits) / pow(10, Double(chars.count - 20))
+				microseconds = digits
+				for _ in chars.count..<26 {
+					microseconds *= 10
+				}
 			}
 		}
 		guard year >= 1, components.isValidDate(in: mysqlUTCCalendar),
 			  let date = mysqlUTCCalendar.date(from: components) else {
 			return nil
 		}
-		self = date.addingTimeInterval(fraction)
+		self.init(mysqlSeconds: date.timeIntervalSinceReferenceDate, microseconds: microseconds)
+	}
+
+	/// A whole second plus a fraction kept inside that second. A Date is a Double count of seconds
+	/// since 2001, which near year 9999 can't hold six fractional digits: plain addition rounded
+	/// 9999-12-31 23:59:59.999999 up to year 10000. Such values become the largest Date still
+	/// inside the second.
+	init(mysqlSeconds seconds: TimeInterval, microseconds: Int) {
+		var interval = seconds + Double(microseconds) / 1_000_000
+		if interval >= seconds + 1 {
+			interval = (seconds + 1).nextDown
+		}
+		self.init(timeIntervalSinceReferenceDate: interval)
 	}
 }
 
