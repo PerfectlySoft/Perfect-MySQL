@@ -148,8 +148,10 @@ public final class MySQL: @unchecked Sendable {
 	// "SHOW ... LIKE '%s'" without escaping it at all (and cut it off at 255 bytes), so a `'`
 	// ended the string literal on a Connector/C build, and Oracle's escape byte by byte (see
 	// listingWildcardIsUnsafe). The query is built here, as in Perfect-MariaDB, with the pattern
-	// escaped by mysql_real_escape_string, which follows the connection's character set and the
-	// server's NO_BACKSLASH_ESCAPES mode as the client library knows them. It's built as bytes:
+	// escaped by perfect_mysql_escape_string_quote (mysql_real_escape_string_quote on
+	// libmysqlclient, mysql_real_escape_string on libmariadb), which follows the connection's
+	// character set and the server's NO_BACKSLASH_ESCAPES mode as the client library knows them:
+	// under NO_BACKSLASH_ESCAPES a `'` is doubled instead of backslash-escaped. It's built as bytes:
 	// under a charset other than UTF-8 the escaped pattern needn't be valid UTF-8.
 	private func listNames(_ show: String, like wild: String?) -> [String] {
 		guard !listingWildcardIsUnsafe(wild) else {
@@ -159,7 +161,8 @@ public final class MySQL: @unchecked Sendable {
 		if let wild {
 			let from = Array(wild.utf8).map { CChar(bitPattern: $0) } + [0]
 			var escaped = [CChar](repeating: 0, count: (from.count - 1) * 2 + 1)
-			let length = mysql_real_escape_string(mysqlPtr, &escaped, from, UInt(from.count - 1))
+			let length = perfect_mysql_escape_string_quote(mysqlPtr, &escaped, from, UInt(from.count - 1),
+														   CChar(UInt8(ascii: "'")))
 			guard length != UInt.max else {
 				return []
 			}

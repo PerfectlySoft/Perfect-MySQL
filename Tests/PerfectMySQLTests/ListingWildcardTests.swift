@@ -90,4 +90,25 @@ struct ListingWildcardTests {
 		try #require(MySQLTestEnvironment.connect(utf8, database: testAdminDB))
 		#expect(!utf8.listingWildcardIsUnsafe("中'"))
 	}
+
+	// Under NO_BACKSLASH_ESCAPES libmysqlclient's mysql_real_escape_string refuses to escape, so
+	// every wildcard returned []. Quotes are now doubled there, and injection stays closed.
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled), arguments: ["utf8mb4", "big5"])
+	func wildcardsWorkUnderNoBackslashEscapes(charset: String) throws {
+		try Self.withSchema(charset: charset) { mysql, schema in
+			#expect(mysql.query(statement: "SET SESSION sql_mode = CONCAT(@@sql_mode, ',NO_BACKSLASH_ESCAPES')"), "\(mysql.errorMessage())")
+			let admin = MySQL()
+			try #require(MySQLTestEnvironment.connect(admin, database: schema))
+			try #require(admin.query(statement: "CREATE TABLE `it's` (i INT)"))
+			#expect(mysql.listTables(wildcard: "vic%") == ["victim"], "\(charset)")
+			#expect(mysql.listTables(wildcard: "it's") == ["it's"], "\(charset)")
+			#expect(mysql.listDatabases(wildcard: schema) == [schema], "\(charset)")
+			for payload in ["x'; DROP TABLE victim; -- ", "x\\'; DROP TABLE victim; -- ", "中'; DROP TABLE victim; -- "] {
+				#expect(mysql.listTables(wildcard: payload).isEmpty, "\(charset)")
+				#expect(mysql.query(statement: "SELECT 1"), "\(charset): \(mysql.errorMessage())")
+				_ = mysql.storeResults()
+			}
+			try #require(admin.query(statement: "DROP TABLE `it's`"))
+		}
+	}
 }
