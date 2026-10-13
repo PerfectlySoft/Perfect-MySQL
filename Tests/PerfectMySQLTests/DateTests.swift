@@ -50,6 +50,55 @@ struct DateTests {
 		#expect(Date(timeIntervalSinceReferenceDate: 721_692_800.9999).mysqlFormatted() == "2023-11-14 22:13:20")
 	}
 
+	// MySQL's calendar is proleptic Gregorian. Foundation's .gregorian switches to Julian before
+	// 1582-10-15: 1582-10-05...14 didn't parse and earlier dates were 10+ days off the server's.
+	@Test func datesUseTheProlepticGregorianCalendar() {
+		let cases: [(String, TimeInterval)] = [ // Unix times from Python's proleptic datetime
+			("0001-01-01", -62_135_596_800),
+			("1000-03-01", -30_605_126_400),
+			("1582-10-04", -12_220_243_200),
+			("1582-10-10", -12_219_724_800),
+			("1582-10-15", -12_219_292_800),
+			("1970-01-01", 0),
+			("2000-02-29", 951_782_400),
+			("9999-12-31", 253_402_214_400),
+		]
+		for (text, unix) in cases {
+			let date = Date(fromMysqlFormatted: text)
+			#expect(date?.timeIntervalSince1970 == unix, "\(text)")
+			#expect(date?.mysqlFormatted() == text + " 00:00:00", "\(text)")
+		}
+		#expect(Date(fromMysqlFormatted: "1900-02-29") == nil)
+		#expect(Date(fromMysqlFormatted: "1600-02-29") != nil)
+		#expect(Date(fromMysqlFormatted: "1000-03-01 12:34:56")?.mysqlFormatted() == "1000-03-01 12:34:56")
+		// Every day of a 400-year cycle round-trips.
+		var day = Date(fromMysqlFormatted: "1600-01-01")!
+		for _ in 0..<146_097 {
+			let text = day.mysqlFormatted()
+			#expect(Date(fromMysqlFormatted: text) == day, "\(text)")
+			if Date(fromMysqlFormatted: text) != day { break }
+			day = day.addingTimeInterval(86_400)
+		}
+		#expect(day.mysqlFormatted() == "2000-01-01 00:00:00")
+	}
+
+	// The server agrees: dates written through Perfect-CRUD land on the same calendar day.
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
+	func oldDatesMatchTheServersCalendar() throws {
+		struct Day: Codable { let d: String }
+		let fixture = try CatalogFixtureDatabase()
+		let db = fixture.database
+		try db.sql("DROP TABLE IF EXISTS date_row")
+		try db.create(DateRow.self, policy: .dropTable)
+		let texts = ["1000-03-01 00:00:00", "1582-10-10 00:00:00", "1582-10-04 12:00:00"]
+		try db.table(DateRow.self).insert(texts.enumerated().map { DateRow(id: $0, d: Date(fromMysqlFormatted: $1)!) })
+		let server = try db.sql("SELECT DATE_FORMAT(d, '%Y-%m-%d %H:%i:%s') AS d FROM date_row ORDER BY id", Day.self)
+		#expect(server.map(\.d) == texts)
+		let read = try db.table(DateRow.self).order(by: \.id).select().map { $0.d.mysqlFormatted() }
+		#expect(read == texts)
+		#expect(try db.sql("SELECT CAST(DATEDIFF('1582-10-15', '1582-10-04') AS CHAR) AS d", Day.self).first?.d == "11")
+	}
+
 	struct DateRow: Codable, TableNameProvider {
 		static let tableName = "date_row"
 		let id: Int
