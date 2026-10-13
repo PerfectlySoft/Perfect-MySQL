@@ -20,6 +20,8 @@ public final class MySQLStmt: @unchecked Sendable {
 	private(set) var paramBinds: UnsafeMutablePointer<MYSQL_BIND>?
 	private var paramBindsOffset = 0
 	var meta: UnsafeMutablePointer<MYSQL_RES>?
+	/// The Results whose buffers the client library is currently bound to, if any.
+	var resultOwner: ObjectIdentifier?
 	
 	/// initialize mysql statement structure
 	public init(_ mysql: MySQL) {
@@ -601,17 +603,23 @@ public final class MySQLStmt: @unchecked Sendable {
 		deinit {
 			// The client library keeps a copy of these binds, with their buffer, length and
 			// is_null pointers, until the next mysql_stmt_bind_result, and executing the statement
-			// again writes through them. Point it at binds that use its own storage before the
-			// buffers below are freed; otherwise reusing a statement corrupted the heap.
-			if numFields > 0 {
-				let detached = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: numFields)
-				for i in 0..<numFields {
-					var bind = MYSQL_BIND()
-					bind.buffer_type = MYSQL_TYPE_NULL
-					detached.advanced(by: i).initialize(to: bind)
+			// again writes through them. If the library is still bound to this Results (not to a
+			// newer one), point it at binds that use its own storage before the buffers below are
+			// freed; otherwise reusing a statement corrupted the heap. bind_result copies one
+			// bind per column of the statement's *current* result, which can differ from ours.
+			if stmt.resultOwner == ObjectIdentifier(self) {
+				stmt.resultOwner = nil
+				let count = Int(stmt.fieldCount())
+				if count > 0 {
+					let detached = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: count)
+					for i in 0..<count {
+						var bind = MYSQL_BIND()
+						bind.buffer_type = MYSQL_TYPE_NULL
+						detached.advanced(by: i).initialize(to: bind)
+					}
+					mysql_stmt_bind_result(stmt.ptr, detached) // copied by the library
+					detached.deallocate()
 				}
-				mysql_stmt_bind_result(stmt.ptr, detached) // copied by the library
-				detached.deallocate()
 			}
 			unbind()
 			binds.deallocate()
@@ -915,7 +923,13 @@ public final class MySQLStmt: @unchecked Sendable {
 				}
 				binds.advanced(by: i).initialize(to: bind)
 			}
+			// With no columns (INSERT, UPDATE...) there is nothing to bind; libmysqlclient would
+			// set CR_NO_STMT_METADATA on the statement.
+			guard numFields > 0 else {
+				return
+			}
 			mysql_stmt_bind_result(stmt.ptr, binds)
+			stmt.resultOwner = ObjectIdentifier(self)
 		}
 		
 		private func unbind() {
