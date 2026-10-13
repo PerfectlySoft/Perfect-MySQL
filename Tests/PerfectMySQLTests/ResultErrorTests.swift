@@ -132,4 +132,28 @@ struct ParameterBindTests {
 			#expect(row.c == Array([1, 2, 3, 4].prefix(row.n % 4)), "\(row.n)")
 		}
 	}
+
+	// Reusing a statement (execute, read results, reset, execute again) corrupted the heap:
+	// the client library kept pointers into the freed Results' buffers and wrote through them on
+	// the next execute. It crashed within ~20 iterations with the system allocator, and on the
+	// second under Guard Malloc, with or without parameters.
+	@Test(.enabled(if: MySQLTestEnvironment.isEnabled))
+	func aStatementCanBeReusedAfterReadingResults() throws {
+		let mysql = MySQL()
+		try #require(MySQLTestEnvironment.connect(mysql, database: testAdminDB))
+		let stmt = MySQLStmt(mysql)
+		try #require(stmt.prepare(statement: "SELECT CAST(? AS SIGNED) AS n, ? * 1.5 AS d, CONCAT('v', ?) AS s, LENGTH(?) AS l"))
+		for n in 0..<300 {
+			stmt.bindParam(n)
+			stmt.bindParam(Double(n))
+			stmt.bindParam("\(n)")
+			stmt.bindParam([UInt8](repeating: 1, count: n % 9))
+			try #require(stmt.execute(), "\(n): \(stmt.errorMessage())")
+			let row = stmt.results().next()
+			#expect(row?[0] as? Int64 == Int64(n))
+			#expect(row?[2] as? String == "v\(n)")
+			#expect(row?[3] as? Int64 == Int64(n % 9))
+			stmt.reset()
+		}
+	}
 }

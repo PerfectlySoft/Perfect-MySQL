@@ -589,6 +589,8 @@ public final class MySQLStmt: @unchecked Sendable {
 			binds = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: numFields)
 			lengthBuffers = UnsafeMutablePointer<UInt>.allocate(capacity: numFields)
 			isNullBuffers = UnsafeMutablePointer<my_bool>.allocate(capacity: numFields)
+			// unbind() reads every bind, including any bind() skips.
+			for i in 0..<numFields { binds.advanced(by: i).initialize(to: MYSQL_BIND()) }
 			// Fetching from a result whose store failed crashes inside libmariadb, so remember it.
 			if numFields > 0 && mysql_stmt_store_result(stmt.ptr) != 0 {
 				fail()
@@ -597,6 +599,20 @@ public final class MySQLStmt: @unchecked Sendable {
 		}
 		
 		deinit {
+			// The client library keeps a copy of these binds, with their buffer, length and
+			// is_null pointers, until the next mysql_stmt_bind_result, and executing the statement
+			// again writes through them. Point it at binds that use its own storage before the
+			// buffers below are freed; otherwise reusing a statement corrupted the heap.
+			if numFields > 0 {
+				let detached = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: numFields)
+				for i in 0..<numFields {
+					var bind = MYSQL_BIND()
+					bind.buffer_type = MYSQL_TYPE_NULL
+					detached.advanced(by: i).initialize(to: bind)
+				}
+				mysql_stmt_bind_result(stmt.ptr, detached) // copied by the library
+				detached.deallocate()
+			}
 			unbind()
 			binds.deallocate()
 			lengthBuffers.deallocate()
