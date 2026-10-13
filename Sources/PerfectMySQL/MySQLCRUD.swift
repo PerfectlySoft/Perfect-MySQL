@@ -174,7 +174,7 @@ class MySQLCRUDRowReader<K : CodingKey>: KeyedDecodingContainerProtocol, @unchec
 			let ret: [UInt8] = (val as? [UInt8]) ?? []
 			return ret as! T
 		case .int8Array:
-			let ret: [Int8] = ((val as? [UInt8]) ?? []).map { Int8($0) }
+			let ret: [Int8] = ((val as? [UInt8]) ?? []).map { Int8(bitPattern: $0) }
 			return ret as! T
 		case .data:
 			let bytes: [UInt8] = (val as? [UInt8]) ?? []
@@ -611,7 +611,11 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 		// decoding error). Leave the connection ready for the next statement anyway.
 		if results != nil {
 			results = nil
-			statement.discardRemainingResults()
+			// Nothing can throw from here (Database.sql without a type calls hasNext() once), so
+			// an error from a later result is only logged.
+			if let later = statement.discardRemainingResults() {
+				CRUDLogging.log(.error, "Error executing statement. \(later.message)")
+			}
 			statement.reset()
 		}
 	}
@@ -667,10 +671,14 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 		let error = failed ? "Error reading results. \(results?.errorMessage ?? "")" : ""
 		results = nil
 		// Read past any further result sets (a CALL ends with a status result), then reset.
-		statement.discardRemainingResults()
+		// A CALL can fail after its first result set; report that too.
+		let later = statement.discardRemainingResults()
 		statement.reset()
 		if failed {
 			throw MySQLCRUDError(error)
+		}
+		if let later {
+			throw MySQLCRUDError("Error executing statement. \(later.message)")
 		}
 		return false
 	}
@@ -723,7 +731,7 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 		case .bool(let b):
 			statement.bindParam(b ? 1 : 0)
 		case .date(let d):
-			statement.bindParam(d.mysqlFormatted())
+			statement.bindParam(try d.mysqlFormatted())
 		case .url(let u):
 			statement.bindParam(u.absoluteString)
 		case .uuid(let u):
@@ -882,28 +890,78 @@ public struct MySQLDatabaseConfiguration: DatabaseConfigurationProtocol, @unchec
 
 // Perfect-CRUD writes dates as UTC wall-clock text, so they're read back as UTC too. Neither
 // direction depends on the process's time zone.
-private let mysqlUTC = TimeZone(identifier: "UTC")!
+//
+// Calendar arithmetic is proleptic Gregorian, as MySQL's is. Foundation's .gregorian calendar
+// switches to the Julian calendar before 1582-10-15, so it rejected 1582-10-05...14 and put
+// earlier dates 10 or more days away from the server's. These are Howard Hinnant's
+// days_from_civil / civil_from_days.
 
-private let mysqlUTCCalendar: Calendar = {
-	var calendar = Calendar(identifier: .gregorian)
-	calendar.timeZone = mysqlUTC
-	return calendar
-}()
+/// Days since 1970-01-01 of a proleptic Gregorian date.
+func mysqlDaysFromCivil(year: Int, month: Int, day: Int) -> Int {
+	let y = month <= 2 ? year - 1 : year
+	let era = (y >= 0 ? y : y - 399) / 400
+	let yearOfEra = y - era * 400
+	let dayOfYear = (153 * (month > 2 ? month - 3 : month + 9) + 2) / 5 + day - 1
+	let dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear
+	return era * 146097 + dayOfEra - 719468
+}
+
+/// The proleptic Gregorian date `days` after 1970-01-01.
+func mysqlCivilFromDays(_ days: Int) -> (year: Int, month: Int, day: Int) {
+	let z = days + 719468
+	let era = (z >= 0 ? z : z - 146096) / 146097
+	let dayOfEra = z - era * 146097
+	let yearOfEra = (dayOfEra - dayOfEra / 1460 + dayOfEra / 36524 - dayOfEra / 146096) / 365
+	let dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100)
+	let mp = (5 * dayOfYear + 2) / 153
+	let day = dayOfYear - (153 * mp + 2) / 5 + 1
+	let month = mp < 10 ? mp + 3 : mp - 9
+	return (yearOfEra + era * 400 + (month <= 2 ? 1 : 0), month, day)
+}
+
+private func mysqlDaysInMonth(year: Int, month: Int) -> Int {
+	switch month {
+	case 2:
+		return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 ? 29 : 28
+	case 4, 6, 9, 11:
+		return 30
+	default:
+		return 31
+	}
+}
+
+/// Seconds between 1970-01-01 and 2001-01-01, Date's reference date.
+private let mysqlReferenceOffset = 978_307_200
 
 extension Date {
-	func mysqlFormatted() -> String {
-		let dateFormatter = DateFormatter()
-		dateFormatter.locale = Locale(identifier: "en_US_POSIX")
-		dateFormatter.calendar = mysqlUTCCalendar
-		dateFormatter.timeZone = mysqlUTC
-		dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-		let ret = dateFormatter.string(from: self)
-		return ret
+	/// `yyyy-MM-dd HH:mm:ss` in UTC, in whole seconds truncated toward the past (rounding could
+	/// carry 9999-12-31 23:59:59.9999995 into a year-10000 string the server rejects).
+	func mysqlFormatted() throws -> String {
+		// A non-finite Date has no text, and MySQL can't store years outside 0...9999; throwing
+		// (rather than clamping) keeps a wrong value out of the database.
+		let interval = timeIntervalSinceReferenceDate.rounded(.down)
+		guard interval.isFinite, abs(interval) < 1e15 else {
+			throw MySQLCRUDError("Can't store the Date \(timeIntervalSinceReferenceDate) (seconds since 2001) in MySQL.")
+		}
+		let seconds = Int(interval) + mysqlReferenceOffset
+		let days = seconds >= 0 ? seconds / 86400 : (seconds - 86399) / 86400
+		let secondOfDay = seconds - days * 86400
+		let (year, month, day) = mysqlCivilFromDays(days)
+		guard (0...9999).contains(year) else {
+			throw MySQLCRUDError("Can't store the Date \(timeIntervalSinceReferenceDate) (seconds since 2001) in MySQL: year \(year) is outside 0...9999.")
+		}
+		func pad(_ value: Int, _ width: Int) -> String {
+			let digits = String(value)
+			return String(repeating: "0", count: max(0, width - digits.count)) + digits
+		}
+		return "\(pad(year, 4))-\(pad(month, 2))-\(pad(day, 2)) "
+			+ "\(pad(secondOfDay / 3600, 2)):\(pad(secondOfDay / 60 % 60, 2)):\(pad(secondOfDay % 60, 2))"
 	}
 	
 	/// Parses MySQL's DATETIME / TIMESTAMP / DATE text as UTC: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM:SS`,
-	/// optionally with up to six fractional digits. Returns nil for anything else, including the
-	/// zero date and out-of-range parts such as February 30.
+	/// optionally with up to six fractional digits, in the proleptic Gregorian calendar (year 0
+	/// included: `Date.distantPast` is 0000-12-30). Returns nil for anything else, including the
+	/// zero date (month or day 0) and out-of-range parts such as February 30.
 	init?(fromMysqlFormatted string: String) {
 		let chars = Array(string.utf8)
 		func number(_ range: Range<Int>) -> Int? {
@@ -921,32 +979,45 @@ extension Date {
 		}
 		guard chars.count == 10 || (19...26).contains(chars.count),
 			  chars[4] == UInt8(ascii: "-"), chars[7] == UInt8(ascii: "-"),
-			  let year = number(0..<4), let month = number(5..<7), let day = number(8..<10) else {
+			  let year = number(0..<4), let month = number(5..<7), let day = number(8..<10),
+			  (1...12).contains(month),
+			  (1...mysqlDaysInMonth(year: year, month: month)).contains(day) else {
 			return nil
 		}
-		var components = DateComponents(year: year, month: month, day: day, hour: 0, minute: 0, second: 0)
-		var fraction = 0.0
+		var secondOfDay = 0
+		var microseconds = 0
 		if chars.count >= 19 {
 			guard chars[10] == UInt8(ascii: " ") || chars[10] == UInt8(ascii: "T"),
 				  chars[13] == UInt8(ascii: ":"), chars[16] == UInt8(ascii: ":"),
-				  let hour = number(11..<13), let minute = number(14..<16), let second = number(17..<19) else {
+				  let hour = number(11..<13), let minute = number(14..<16), let second = number(17..<19),
+				  hour < 24, minute < 60, second < 60 else {
 				return nil
 			}
-			components.hour = hour
-			components.minute = minute
-			components.second = second
+			secondOfDay = hour * 3600 + minute * 60 + second
 			if chars.count > 19 {
 				guard chars[19] == UInt8(ascii: "."), let digits = number(20..<chars.count) else {
 					return nil
 				}
-				fraction = Double(digits) / pow(10, Double(chars.count - 20))
+				microseconds = digits
+				for _ in chars.count..<26 {
+					microseconds *= 10
+				}
 			}
 		}
-		guard year >= 1, components.isValidDate(in: mysqlUTCCalendar),
-			  let date = mysqlUTCCalendar.date(from: components) else {
-			return nil
+		let seconds = mysqlDaysFromCivil(year: year, month: month, day: day) * 86400 + secondOfDay
+		self.init(mysqlSeconds: TimeInterval(seconds - mysqlReferenceOffset), microseconds: microseconds)
+	}
+
+	/// A whole second plus a fraction kept inside that second. A Date is a Double count of seconds
+	/// since 2001, which near year 9999 can't hold six fractional digits: plain addition rounded
+	/// 9999-12-31 23:59:59.999999 up to year 10000. Such values become the largest Date still
+	/// inside the second.
+	init(mysqlSeconds seconds: TimeInterval, microseconds: Int) {
+		var interval = seconds + Double(microseconds) / 1_000_000
+		if interval >= seconds + 1 {
+			interval = (seconds + 1).nextDown
 		}
-		self = date.addingTimeInterval(fraction)
+		self.init(timeIntervalSinceReferenceDate: interval)
 	}
 }
 

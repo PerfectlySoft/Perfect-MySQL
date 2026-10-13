@@ -52,4 +52,59 @@ struct StoredProcedureTests {
 			#expect(try db.sql("CALL two_sets()", Item.self).count == 1)
 		}
 	}
+
+	// A CALL that fails after returning a result set used to report success with the first
+	// set's rows: the error came with a later result, which was discarded.
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled), arguments: [
+		("dup_key", "INSERT INTO Item VALUES (1, 'again')", "Duplicate entry"),
+		("subquery", "SELECT (SELECT 1 UNION SELECT 2) AS x", "more than 1 row"),
+		("signal", "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'procedure failed'", "procedure failed"),
+	])
+	func anErrorAfterTheFirstResultSetThrows(name: String, failing: String, message: String) throws {
+		let fixture = try Self.procedureDatabase()
+		let db = fixture.database
+		try db.sql("CREATE PROCEDURE fails_\(name)() BEGIN SELECT 1 AS id, 'a' AS name; \(failing); END")
+		let typed = #expect(throws: MySQLCRUDError.self) {
+			_ = try db.sql("CALL fails_\(name)()", Item.self)
+		}
+		#expect(typed?.description.contains(message) == true, "\(String(describing: typed))")
+		#expect(try db.table(Item.self).count() == 3)
+
+		let dynamic = #expect(throws: MySQLCRUDError.self) {
+			_ = try db.execute(DynamicSQL(sql: "CALL fails_\(name)()"))
+		}
+		#expect(dynamic?.description.contains(message) == true, "\(String(describing: dynamic))")
+		#expect(try db.table(Item.self).count() == 3)
+
+		// Untyped: Perfect-CRUD calls hasNext() once, so the error can't be reported, but the
+		// connection must still be usable.
+		try db.sql("CALL fails_\(name)()")
+		#expect(try db.table(Item.self).count() == 3)
+	}
+
+	// Re-executing one prepared CALL. With MariaDB Connector/C the cached result metadata
+	// pointed into storage the library replaces on each execution, so reading the second
+	// execution's rows used freed memory (seen under Guard Malloc).
+	@Test(.enabled(if: MySQLTestEnvironment.isFixtureEnabled))
+	func aPreparedCallCanBeExecutedRepeatedly() throws {
+		let fixture = try Self.procedureDatabase()
+		let mysql = MySQL()
+		try #require(MySQLTestEnvironment.connect(mysql, database: fixture.config.schema))
+		let stmt = MySQLStmt(mysql)
+		try #require(stmt.prepare(statement: "CALL items_from(?)"))
+		for n in 0..<20 {
+			let low = n % 3 + 1
+			stmt.bindParam(low)
+			try #require(stmt.execute(), "\(n): \(stmt.errorMessage())")
+			#expect(stmt.fieldInfo(index: 1)?.name == "name")
+			let results = stmt.results()
+			var ids: [Int64] = []
+			while let row = results.next() { ids.append((row[0] as? Int32).map(Int64.init) ?? -1) }
+			#expect(ids == Array(Int64(low)...3), "\(n)")
+			stmt.freeResult()
+			while stmt.nextResult() == 0 { stmt.freeResult() }
+			stmt.reset()
+		}
+		#expect(mysql.query(statement: "SELECT 1"), "\(mysql.errorMessage())")
+	}
 }
