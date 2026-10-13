@@ -22,7 +22,7 @@ The pre-Swift-6 version of this package (3.x, last released as 3.5.1) is preserv
 - Swift 6.2 or newer (`swift-tools-version: 6.2`).
 - macOS 12+ (`platforms: [.macOS(.v12)]`) or Linux. CI covers macOS 26 with Xcode 26.0.1 and 26.6, and Ubuntu 24.04 with Swift 6.2 and 6.4. There is no iOS support: the client library isn't available there.
 - The MySQL client library, found through `pkg-config` as `mysqlclient`: Oracle's libmysqlclient 8.0 or newer (Homebrew `mysql-client` on macOS, `libmysqlclient-dev` on Linux), or MariaDB Connector/C through Debian's `libmariadb-dev-compat`. On macOS, Homebrew's bottle is built for a recent macOS, which then sets the real minimum for your binary; check `brew info mysql-client`.
-- [Perfect-CRUD](https://github.com/PerfectlySoft/Perfect-CRUD) 3.0.0 or newer, resolved by SwiftPM.
+- [Perfect-CRUD](https://github.com/PerfectlySoft/Perfect-CRUD) 3.0.1 or newer, resolved by SwiftPM.
 
 ## macOS Setup
 
@@ -257,7 +257,7 @@ MySQL 8.0 removed the `my_bool` typedef that earlier versions used for nullable 
 4.0.0 is the Swift 6 rewrite; the public API of `MySQL`, `MySQLStmt` and `MySQLDatabaseConfiguration` is largely unchanged, apart from `Sendable` conformances and the additions below. When upgrading:
 
 - **Toolchain and platforms:** Swift 6.2+ and macOS 12+. The client library is no longer a separate `Perfect-mysqlclient` package; install it as described above and make sure `pkg-config` can find `mysqlclient` (on macOS, set `PKG_CONFIG_PATH` for the keg-only Homebrew formula).
-- **Perfect-CRUD 3:** this release requires Perfect-CRUD 3.0.0, which has breaking changes of its own; see its release notes.
+- **Perfect-CRUD 3:** this release requires Perfect-CRUD 3.0.1. Perfect-CRUD 3 has breaking changes of its own; see its release notes.
 - **Binary values are bytes:** `MySQLStmt` results for BINARY, VARBINARY, BIT and GEOMETRY columns, and binary expressions such as `CAST(x AS BINARY)`, `UNHEX()` or `x'..'` literals, are now `[UInt8]` instead of `String` (BLOBs already were). Use `String(decoding: bytes, as: UTF8.self)`, or `CAST(… AS CHAR)` in SQL, where you want text. Through Perfect-CRUD, `String`, `UUID`, `Date` and `URL` properties over binary columns still decode as text.
 - **No more truncated text:** `MySQL.Results` (from `query(statement:)`) and `MySQLStmt` used to stop at the first invalid UTF-8 byte; they now return the whole value with U+FFFD for invalid bytes. For exact bytes from `MySQL.Results`, use the new `nextBytes()` / `forEachRowBytes(callback:)` and `fieldIsBinary(at:)`.
 - **Nested transactions work:** Perfect-CRUD's nested `transaction {}` sends `SAVEPOINT` statements, which MySQL can't prepare. These, and `BEGIN`, `START TRANSACTION`, `LOCK`/`UNLOCK TABLES` and `USE`, now run directly, as does anything else the server refuses to prepare (error 1295). An unpreparable statement that returns rows (`CHECK TABLE`, `XA RECOVER`) now throws instead of silently returning nothing.
@@ -271,7 +271,7 @@ MySQL 8.0 removed the `my_bool` typedef that earlier versions used for nullable 
 - **DECIMAL columns** now decode into `Double` and `Float` properties; they used to read as 0.
 - **`listTables` / `listDatabases` wildcards** can no longer inject SQL. The wildcard could end the string literal, and with `CLIENT_MULTI_STATEMENTS` the rest of it ran as SQL: with any `'` on MariaDB Connector/C (which doesn't escape it at all); under big5, cp932, gbk, gb18030 or sjis with libmysqlclient; and, with either library, after a stored routine changed `sql_mode`, which leaves the client's idea of `NO_BACKSLASH_ESCAPES` wrong. The query is now built so that it doesn't depend on that mode: a `'` is written as `''`, other text is escaped by the client library, and the result is `[]` (refused) for a wildcard that contains both `'` and `\`, or that contains a non-ASCII byte and a `'` or `\` while the connection charset (as set with `MYSQL_SET_CHARSET_NAME`) is one of those five. Ordinary wildcards work in both `NO_BACKSLASH_ESCAPES` modes.
 - **Statements can be reused:** executing a `MySQLStmt` again after reading its results corrupted the heap; it now works, including when a results variable is reassigned or a `CALL`'s result sets are walked one after another, and re-executing a prepared `CALL` on MariaDB Connector/C. `execute()` now returns false (error 2031, `CR_PARAMS_NOT_BOUND`) unless every parameter has been bound since the last `reset()`; re-executing with the old binds read freed memory. Blob parameters (`[UInt8]`, `[Int8]`, `bindParam(_:length:)`) and the parameter array no longer leak.
-- **`[Int8]` properties** holding negative values read back correctly; they crashed the read. (Writing them through Perfect-CRUD needs Perfect-CRUD 3.0.1.)
+- **`[Int8]` properties** holding negative values read back correctly; they crashed the read. Writing them works through Perfect-CRUD 3.0.1, which this release requires.
 - **Identifiers:** `quote(identifier:)` doubles backticks inside names, so Perfect-CRUD's Dynamic API can't be used to inject SQL through a table or field name. It assumes a utf8mb4 connection, which the `database:host:` initializers set.
 
 ## License
