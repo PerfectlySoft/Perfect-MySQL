@@ -178,13 +178,17 @@ public final class MySQL: @unchecked Sendable {
 		return MySQL.Results(ret)
 	}
  
-    public func lastInsertId() -> Int64 {
-        return Int64(mysql_insert_id(mysqlPtr))
-    }
-    
-    public func numberAffectedRows() -> Int64 {
-        return Int64(mysql_affected_rows(mysqlPtr))
-    }
+	/// The AUTO_INCREMENT value of the last INSERT. Values above Int64.max (BIGINT UNSIGNED)
+	/// come back negative; reinterpret them with `UInt64(bitPattern:)`.
+	public func lastInsertId() -> Int64 {
+		return Int64(bitPattern: UInt64(mysql_insert_id(mysqlPtr)))
+	}
+	
+	/// Rows changed by the last statement, or -1 (as in the C API) after an error, or after a
+	/// SELECT before `storeResults()`.
+	public func numberAffectedRows() -> Int64 {
+		return Int64(bitPattern: UInt64(mysql_affected_rows(mysqlPtr)))
+	}
 	
 	func exposedOptionToMySQLOption(_ o: MySQLOpt) -> mysql_option {
 		switch o {

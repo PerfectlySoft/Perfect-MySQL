@@ -143,7 +143,8 @@ struct SubTableCreateOrderLiveTests {
 		let db = try freshDatabase()
 		defer { try? dropSchema() }
 		func count(_ table: String) throws -> Int {
-			try db.sql("SELECT COUNT(*) AS c FROM \(table)", Count.self)[0].c
+			let rows = try db.sql("SELECT COUNT(*) AS c FROM \(table)", Count.self)
+			return rows[0].c
 		}
 		try db.sql("CREATE TABLE `quote_victim` (`id` INT PRIMARY KEY)")
 		for mark in ["\u{301}", "\u{FE0F}"] {

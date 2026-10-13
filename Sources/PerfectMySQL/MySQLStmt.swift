@@ -17,7 +17,7 @@ public final class MySQLStmt: @unchecked Sendable {
 	private let ptr: UnsafeMutablePointer<MYSQL_STMT>
 	/// Keeps the connection alive for as long as the statement: `ptr` belongs to it.
 	private let connection: MySQL
-	private var paramBinds: UnsafeMutablePointer<MYSQL_BIND>?
+	private(set) var paramBinds: UnsafeMutablePointer<MYSQL_BIND>?
 	private var paramBindsOffset = 0
 	var meta: UnsafeMutablePointer<MYSQL_RES>?
 	
@@ -163,13 +163,12 @@ public final class MySQLStmt: @unchecked Sendable {
 	}
 	
 	public func clearBinds() {
-		let count = paramBindsOffset
-		if count > 0, nil != paramBinds {
-			resetBinds()
-			paramBinds?.deallocate()
-			paramBinds = nil
-			paramBindsOffset = 0
-		}
+		// reset() already zeroes paramBindsOffset, so the array must be freed whatever the offset;
+		// checking it leaked one array per parameterized statement.
+		resetBinds()
+		paramBinds?.deallocate()
+		paramBinds = nil
+		paramBindsOffset = 0
 	}
 	
 	/// Free the resources allocated to a statement handle
@@ -177,6 +176,17 @@ public final class MySQLStmt: @unchecked Sendable {
 		mysql_stmt_free_result(ptr)
 	}
 	
+	/// The statement's error, or the connection's when the client library reported it there
+	/// (MariaDB Connector/C does for a failed mysql_stmt_store_result). Call right after the
+	/// failing call.
+	func currentError() -> (code: UInt32, message: String) {
+		let code = mysql_stmt_errno(ptr)
+		if code != 0 {
+			return (code, errorMessage())
+		}
+		return (mysql_errno(connection.mysqlPtr), connection.errorMessage())
+	}
+
 	/// Returns the error number for the last statement execution
 	public func errorCode() -> UInt32 {
 		return mysql_stmt_errno(ptr)
@@ -198,6 +208,7 @@ public final class MySQLStmt: @unchecked Sendable {
 			mysql_free_result(m)
 		}
 		meta = mysql_stmt_result_metadata(ptr)
+		clearBinds() // a statement prepared again would otherwise leak the previous array
 		let count = paramCount()
 		if count > 0 {
 			paramBinds = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: count)
@@ -279,6 +290,19 @@ public final class MySQLStmt: @unchecked Sendable {
 			meta = nil
 		}
 		return r
+	}
+
+	/// Reads and discards the current result set and any that follow (a CALL returns its rows
+	/// and then a status result), so the connection can run the next statement instead of
+	/// failing with "Commands out of sync".
+	func discardRemainingResults() {
+		mysql_stmt_free_result(ptr)
+		while nextResult() == 0 {
+			if fieldCount() > 0 {
+				mysql_stmt_store_result(ptr)
+			}
+			mysql_stmt_free_result(ptr)
+		}
 	}
 
 	/// Fetches result metadata if there is none cached, or if the cached metadata's column count
@@ -529,6 +553,18 @@ public final class MySQLStmt: @unchecked Sendable {
 		let lengthBuffers: UnsafeMutablePointer<UInt>
 		let isNullBuffers: UnsafeMutablePointer<my_bool>
 		private var closed = false
+		/// True when reading the result failed, for example when a scalar subquery returned more
+		/// than one row partway through (error 1242). `next()` then returns nil, and
+		/// `errorCode` / `errorMessage` say why.
+		public private(set) var failed = false
+		/// The server's error when `failed`, otherwise 0 / "".
+		public private(set) var errorCode: UInt32 = 0
+		public private(set) var errorMessage = ""
+
+		private func fail() {
+			failed = true
+			(errorCode, errorMessage) = stmt.currentError()
+		}
 		
 		init(_ s: MySQLStmt) {
 			stmt = s
@@ -539,7 +575,10 @@ public final class MySQLStmt: @unchecked Sendable {
 			binds = UnsafeMutablePointer<MYSQL_BIND>.allocate(capacity: numFields)
 			lengthBuffers = UnsafeMutablePointer<UInt>.allocate(capacity: numFields)
 			isNullBuffers = UnsafeMutablePointer<my_bool>.allocate(capacity: numFields)
-			mysql_stmt_store_result(stmt.ptr)
+			// Fetching from a result whose store failed crashes inside libmariadb, so remember it.
+			if numFields > 0 && mysql_stmt_store_result(stmt.ptr) != 0 {
+				fail()
+			}
 			bind()
 		}
 		
@@ -551,11 +590,16 @@ public final class MySQLStmt: @unchecked Sendable {
 		}
 		
 		public func fetchRow() -> Bool {
-			let fetchRes = mysql_stmt_fetch(stmt.ptr)
-			if fetchRes == MYSQL_NO_DATA || fetchRes == 1 {
+			// No columns: an INSERT, UPDATE etc. has no rows to fetch.
+			guard !failed, numFields > 0 else {
 				return false
 			}
-			return true
+			let fetchRes = mysql_stmt_fetch(stmt.ptr)
+			if fetchRes == 1 {
+				fail()
+				return false
+			}
+			return fetchRes != MYSQL_NO_DATA
 		}
 		
 		public func currentRow() -> [Any?]? {
@@ -734,11 +778,12 @@ public final class MySQLStmt: @unchecked Sendable {
 		}
 		
 		/// Retrieve and process each row with the provided callback
+		/// Returns false if reading the rows failed partway (see `failed`).
 		public func forEachRow(callback: (Element) -> ()) -> Bool {
 			while let row = next() {
 				callback(row)
 			}
-			return true
+			return !failed
 		}
 		
 		func bindToType(_ type: GeneralType) -> MYSQL_BIND {
