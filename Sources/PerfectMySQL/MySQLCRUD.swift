@@ -731,7 +731,7 @@ class MySQLStmtExeDelegate: SQLExeDelegate, @unchecked Sendable {
 		case .bool(let b):
 			statement.bindParam(b ? 1 : 0)
 		case .date(let d):
-			statement.bindParam(d.mysqlFormatted())
+			statement.bindParam(try d.mysqlFormatted())
 		case .url(let u):
 			statement.bindParam(u.absoluteString)
 		case .uuid(let u):
@@ -936,11 +936,20 @@ private let mysqlReferenceOffset = 978_307_200
 extension Date {
 	/// `yyyy-MM-dd HH:mm:ss` in UTC, in whole seconds truncated toward the past (rounding could
 	/// carry 9999-12-31 23:59:59.9999995 into a year-10000 string the server rejects).
-	func mysqlFormatted() -> String {
-		let seconds = Int(timeIntervalSinceReferenceDate.rounded(.down)) + mysqlReferenceOffset
+	func mysqlFormatted() throws -> String {
+		// A non-finite Date has no text, and MySQL can't store years outside 0...9999; throwing
+		// (rather than clamping) keeps a wrong value out of the database.
+		let interval = timeIntervalSinceReferenceDate.rounded(.down)
+		guard interval.isFinite, abs(interval) < 1e15 else {
+			throw MySQLCRUDError("Can't store the Date \(timeIntervalSinceReferenceDate) (seconds since 2001) in MySQL.")
+		}
+		let seconds = Int(interval) + mysqlReferenceOffset
 		let days = seconds >= 0 ? seconds / 86400 : (seconds - 86399) / 86400
 		let secondOfDay = seconds - days * 86400
 		let (year, month, day) = mysqlCivilFromDays(days)
+		guard (0...9999).contains(year) else {
+			throw MySQLCRUDError("Can't store the Date \(timeIntervalSinceReferenceDate) (seconds since 2001) in MySQL: year \(year) is outside 0...9999.")
+		}
 		func pad(_ value: Int, _ width: Int) -> String {
 			let digits = String(value)
 			return String(repeating: "0", count: max(0, width - digits.count)) + digits
@@ -950,8 +959,9 @@ extension Date {
 	}
 	
 	/// Parses MySQL's DATETIME / TIMESTAMP / DATE text as UTC: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM:SS`,
-	/// optionally with up to six fractional digits. Returns nil for anything else, including the
-	/// zero date and out-of-range parts such as February 30.
+	/// optionally with up to six fractional digits, in the proleptic Gregorian calendar (year 0
+	/// included: `Date.distantPast` is 0000-12-30). Returns nil for anything else, including the
+	/// zero date (month or day 0) and out-of-range parts such as February 30.
 	init?(fromMysqlFormatted string: String) {
 		let chars = Array(string.utf8)
 		func number(_ range: Range<Int>) -> Int? {
@@ -970,7 +980,7 @@ extension Date {
 		guard chars.count == 10 || (19...26).contains(chars.count),
 			  chars[4] == UInt8(ascii: "-"), chars[7] == UInt8(ascii: "-"),
 			  let year = number(0..<4), let month = number(5..<7), let day = number(8..<10),
-			  year >= 1, (1...12).contains(month),
+			  (1...12).contains(month),
 			  (1...mysqlDaysInMonth(year: year, month: month)).contains(day) else {
 			return nil
 		}
