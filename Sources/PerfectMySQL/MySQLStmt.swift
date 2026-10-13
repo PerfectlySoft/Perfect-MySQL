@@ -295,11 +295,23 @@ public final class MySQLStmt: @unchecked Sendable {
 	/// Reads and discards the current result set and any that follow (a CALL returns its rows
 	/// and then a status result), so the connection can run the next statement instead of
 	/// failing with "Commands out of sync".
-	func discardRemainingResults() {
+	///
+	/// Returns the first error a later result reported (a CALL can fail after returning rows),
+	/// or nil. After an error the server sends no more results.
+	@discardableResult
+	func discardRemainingResults() -> (code: UInt32, message: String)? {
 		mysql_stmt_free_result(ptr)
-		while nextResult() == 0 {
-			if fieldCount() > 0 {
-				mysql_stmt_store_result(ptr)
+		var firstError: (code: UInt32, message: String)?
+		while true {
+			let r = nextResult()
+			if r > 0 {
+				return firstError ?? currentError()
+			}
+			if r < 0 {
+				return firstError
+			}
+			if fieldCount() > 0 && mysql_stmt_store_result(ptr) != 0 && firstError == nil {
+				firstError = currentError()
 			}
 			mysql_stmt_free_result(ptr)
 		}
