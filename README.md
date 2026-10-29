@@ -10,10 +10,13 @@ A Swift 6 wrapper around the MySQL client library (libmysqlclient), providing bo
 
 ## Status
 
-Perfect-MySQL is core, actively-used infrastructure, depended on directly by Perfect-NIO,
-Perfect-Session, and PerfectTemplate — not a standalone/experimental library.
+Perfect-NIO, Perfect-Session and PerfectTemplate depend on this package. It's a synchronous, blocking wrapper
+around libmysqlclient.
 
-An `mysql-nio`-based async rewrite was considered and deliberately deferred — see [`Documentation/mysql-nio-integration-plan.md`](Documentation/mysql-nio-integration-plan.md) for the tradeoffs. This package remains the synchronous, blocking libmysqlclient wrapper described below.
+An async rewrite on [mysql-nio](https://github.com/vapor/mysql-nio) was considered and deferred.
+libmysqlclient has no nonblocking calls for prepared statements, which the Perfect-CRUD layer is built on,
+and mysql-nio can't back Perfect-CRUD's synchronous connector protocol without a redesign of Perfect-CRUD.
+It may be revisited if blocking calls are shown to starve Swift's cooperative thread pool under real load.
 
 The pre-Swift-6 version of this package (3.x, last released as 3.5.1) is preserved on the [`legacy`](https://github.com/PerfectlySoft/Perfect-MySQL/tree/legacy) branch. Stay on 3.5.1 if you can't move to Swift 6.2 yet.
 
